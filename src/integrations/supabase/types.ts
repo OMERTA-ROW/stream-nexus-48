@@ -14,7 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      room_channels: {
+        Row: {
+          created_at: string
+          handle: string
+          id: string
+          platform: string
+          room_code: string
+        }
+        Insert: {
+          created_at?: string
+          handle: string
+          id?: string
+          platform: string
+          room_code: string
+        }
+        Update: {
+          created_at?: string
+          handle?: string
+          id?: string
+          platform?: string
+          room_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_channels_room_code_fkey"
+            columns: ["room_code"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
+      rooms: {
+        Row: {
+          code: string
+          created_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
