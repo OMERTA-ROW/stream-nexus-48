@@ -350,16 +350,29 @@ function Hub() {
           <div className="mx-auto mt-2 flex max-w-6xl flex-wrap gap-1.5">
             {channels.map((c) => {
               const m = metaFor(c.platform);
+              const h = combinedHealth(c.id, c.platform);
               return (
                 <span
                   key={c.id}
                   className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-xs"
+                  title={`${h.label}${h.detail ? ` — ${h.detail}` : ""}`}
                 >
                   <span
                     className="h-1.5 w-1.5 rounded-full"
                     style={{ backgroundColor: m.color }}
                   />
                   {m.short} · {c.label ?? c.handle}
+                  <StatusDot level={h.level} />
+                  {(h.level === "degraded" || h.level === "failed") && (
+                    <button
+                      onClick={() => reconnectChannel(c.id)}
+                      className="rounded p-0.5 text-amber-400 hover:bg-amber-500/20"
+                      aria-label="Reconnect"
+                      title="Reconnect this feed"
+                    >
+                      <RotateCw className="h-3 w-3" />
+                    </button>
+                  )}
                   <button
                     onClick={() => removeChannel(c.id)}
                     className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -372,6 +385,7 @@ function Hub() {
             })}
           </div>
         )}
+
       </div>
 
       <div className="flex flex-1 flex-col lg:flex-row">
