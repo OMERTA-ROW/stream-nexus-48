@@ -1,6 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video } from "lucide-react";
+import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { connectTwitch, type ChatMessage, type Platform } from "@/lib/chat-sources";
 
 export const Route = createFileRoute("/hub")({
@@ -81,14 +82,32 @@ function metaFor(k: SourceKind) {
 const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok"];
 
 function Hub() {
+  const navigate = useNavigate();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [platform, setPlatform] = useState<Platform>("twitch");
   const [handle, setHandle] = useState("");
   const [filter, setFilter] = useState<Platform | "all">("all");
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [creatingRoom, setCreatingRoom] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+
+  const createRoom = async () => {
+    setCreatingRoom(true);
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const code =
+      Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("") +
+      "-" +
+      Array.from({ length: 2 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+    const { error } = await supabase.from("rooms").insert({ code });
+    setCreatingRoom(false);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    navigate({ to: "/r/$code", params: { code } });
+  };
 
   useEffect(() => {
     try {
@@ -161,9 +180,20 @@ function Hub() {
           <span className="on-air-dot" aria-hidden />
           OmniCast
         </Link>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Radio className="h-3.5 w-3.5" />
-          {channels.length} channel{channels.length === 1 ? "" : "s"} loaded
+        <div className="flex items-center gap-2">
+          <button
+            onClick={createRoom}
+            disabled={creatingRoom}
+            className="inline-flex items-center gap-1.5 rounded-md border border-primary/60 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 disabled:opacity-50"
+            title="Create a shared room and pair other devices"
+          >
+            <Users className="h-3.5 w-3.5" />
+            {creatingRoom ? "Creating…" : "Create shared room"}
+          </button>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Radio className="h-3.5 w-3.5" />
+            {channels.length} channel{channels.length === 1 ? "" : "s"}
+          </div>
         </div>
       </header>
 
