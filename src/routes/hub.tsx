@@ -138,6 +138,19 @@ function Hub() {
     navigate({ to: "/r/$code", params: { code } });
   };
 
+  const [chatHealth, setChatHealth] = useState<Record<string, Health>>({});
+  const [tileHealth, setTileHealth] = useState<Record<string, Health>>({});
+  const chatSourcesRef = useRef<Record<string, { reconnect: () => void }>>({});
+  const reconnectTileRef = useRef<Record<string, () => void>>({});
+
+  const setTileHealthFor = useCallback((id: string, h: Health) => {
+    setTileHealth((prev) => (prev[id]?.level === h.level && prev[id]?.label === h.label ? prev : { ...prev, [id]: h }));
+  }, []);
+  const registerTileReconnect = useCallback((id: string, fn: () => void) => {
+    reconnectTileRef.current[id] = fn;
+    return () => { delete reconnectTileRef.current[id]; };
+  }, []);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem("omnicast:channels");
@@ -151,18 +164,43 @@ function Hub() {
   }, [channels]);
 
   useEffect(() => {
+    const map: Record<string, { reconnect: () => void }> = {};
     const sources = channels
       .filter((c) => c.platform === "twitch")
-      .map((c) =>
-        connectTwitch(c.handle, (m) =>
-          setMessages((prev) => {
-            const next = [...prev, m];
-            return next.length > 500 ? next.slice(-500) : next;
-          }),
-        ),
-      );
+      .map((c) => {
+        const src = connectTwitch(
+          c.handle,
+          (m) =>
+            setMessages((prev) => {
+              const next = [...prev, m];
+              return next.length > 500 ? next.slice(-500) : next;
+            }),
+          (state) => setChatHealth((prev) => ({ ...prev, [c.id]: healthFromChat(state) })),
+        );
+        map[c.id] = src;
+        return src;
+      });
+    chatSourcesRef.current = map;
     return () => sources.forEach((s) => s.close());
   }, [channels]);
+
+  // Freshness sweep — mark any 'live' chat as 'degraded' after 90s of silence.
+  useEffect(() => {
+    const t = setInterval(() => {
+      setChatHealth((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [id, h] of Object.entries(prev)) {
+          if (h.level === "live" && h.lastAt && Date.now() - h.lastAt > 90_000) {
+            next[id] = { ...h, level: "degraded", label: "Quiet", detail: "No messages for 90s+" };
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     if (!stickToBottom.current || !scrollerRef.current) return;
@@ -194,6 +232,8 @@ function Hub() {
 
   const removeChannel = (id: string) => {
     setChannels((prev) => prev.filter((c) => c.id !== id));
+    setChatHealth((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    setTileHealth((prev) => { const n = { ...prev }; delete n[id]; return n; });
     setMessages((prev) =>
       prev.filter((m) => {
         const c = channels.find((x) => x.id === id);
@@ -201,6 +241,35 @@ function Hub() {
       }),
     );
   };
+
+  const reconnectChannel = (id: string) => {
+    chatSourcesRef.current[id]?.reconnect();
+    reconnectTileRef.current[id]?.();
+  };
+  const reconnectAll = () => {
+    Object.values(chatSourcesRef.current).forEach((s) => s.reconnect());
+    Object.values(reconnectTileRef.current).forEach((fn) => fn());
+  };
+
+  const combinedHealth = (id: string, platform: SourceKind): Health => {
+    if (platform === "camera") return tileHealth[id] ?? { level: "connecting", label: "Starting" };
+    if (platform === "twitch") {
+      const chat = chatHealth[id];
+      const tile = tileHealth[id];
+      // Chat health takes precedence when worse than tile.
+      const rank: Record<HealthLevel, number> = { live: 0, connecting: 1, degraded: 2, failed: 3, idle: 4 };
+      const chatH = chat ?? { level: "connecting" as const, label: "Connecting" };
+      const tileH = tile ?? { level: "connecting" as const, label: "Loading" };
+      return rank[chatH.level] >= rank[tileH.level] ? chatH : tileH;
+    }
+    return tileHealth[id] ?? { level: "connecting", label: "Loading" };
+  };
+
+  const degradedCount = channels.filter((c) => {
+    const h = combinedHealth(c.id, c.platform);
+    return h.level === "degraded" || h.level === "failed";
+  }).length;
+
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
