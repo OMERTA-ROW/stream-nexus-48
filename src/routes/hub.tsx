@@ -1,6 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video } from "lucide-react";
+import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { connectTwitch, type ChatMessage, type Platform } from "@/lib/chat-sources";
 
 export const Route = createFileRoute("/hub")({
