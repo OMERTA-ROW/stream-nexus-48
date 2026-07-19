@@ -288,12 +288,27 @@ function Hub() {
             <Users className="h-3.5 w-3.5" />
             {creatingRoom ? "Creating…" : "Create shared room"}
           </button>
+          {channels.length > 0 && (
+            <button
+              onClick={reconnectAll}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                degradedCount > 0
+                  ? "border-amber-500/60 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 animate-pulse"
+                  : "border-border bg-background/60 text-muted-foreground hover:bg-accent"
+              }`}
+              title={degradedCount > 0 ? `${degradedCount} feed${degradedCount === 1 ? "" : "s"} degraded — click to reconnect all` : "All feeds healthy — force reconnect"}
+            >
+              <Activity className="h-3.5 w-3.5" />
+              {degradedCount > 0 ? `${degradedCount} degraded` : "All healthy"}
+            </button>
+          )}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Radio className="h-3.5 w-3.5" />
             {channels.length} channel{channels.length === 1 ? "" : "s"}
           </div>
         </div>
       </header>
+
 
       <div className="border-b border-border/60 bg-card/40 px-4 py-3">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
