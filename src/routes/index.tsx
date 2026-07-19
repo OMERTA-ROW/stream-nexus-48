@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Radio, MessagesSquare, Grid2x2, ShieldAlert } from "lucide-react";
+import { Radio, MessagesSquare, Grid2x2, ShieldAlert, Check } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -25,6 +25,9 @@ function Landing() {
           <nav className="flex items-center gap-2 text-sm">
             <a href="#how" className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground">
               How it works
+            </a>
+            <a href="#pricing" className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground">
+              Pricing
             </a>
             <a href="#truth" className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground">
               What's real
@@ -159,6 +162,107 @@ function Landing() {
             <li className="flex gap-3"><span className="text-primary">▸</span> A generated <span className="font-mono text-foreground">nginx-rtmp</span> config you deploy on a $5 VPS to fan one input out to every platform.</li>
             <li className="flex gap-3"><span className="text-primary">▸</span> TikTok Live requires their approved streaming access — we can't magic that in.</li>
           </ul>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="border-t border-border/60 bg-card/30">
+        <div className="mx-auto max-w-6xl px-6 py-20">
+          <div className="mb-10 text-center">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-xs uppercase tracking-widest text-muted-foreground">
+              Pricing
+            </div>
+            <h2 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
+              Pick your booth.
+            </h2>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Start free. Upgrade when you need more channels and the multistream relay.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              {
+                name: "Free",
+                price: "$0",
+                cadence: "forever",
+                highlight: false,
+                cta: "Open hub",
+                features: [
+                  "Up to 2 stream tiles",
+                  "Merged Twitch chat (read-only)",
+                  "1 local camera source",
+                  "Community support",
+                ],
+              },
+              {
+                name: "Creator",
+                price: "$5",
+                cadence: "/ month",
+                highlight: true,
+                cta: "Start Creator",
+                features: [
+                  "Up to 6 stream tiles",
+                  "Merged chat: Twitch + YouTube + Kick",
+                  "Save channel presets to your account",
+                  "Send-to-chat (Phase 2)",
+                  "Email support",
+                ],
+              },
+              {
+                name: "Broadcaster",
+                price: "$10",
+                cadence: "/ month",
+                highlight: false,
+                cta: "Go Broadcaster",
+                features: [
+                  "Unlimited stream tiles",
+                  "All Creator features",
+                  "Multistream relay config generator",
+                  "Encrypted RTMP key vault",
+                  "TikTok Live integration (where approved)",
+                  "Priority support",
+                ],
+              },
+            ].map((tier) => (
+              <div
+                key={tier.name}
+                className={`relative flex flex-col rounded-2xl border p-6 ${
+                  tier.highlight
+                    ? "border-primary bg-background shadow-glow"
+                    : "border-border bg-background/60"
+                }`}
+              >
+                {tier.highlight && (
+                  <span className="absolute -top-3 left-6 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary-foreground">
+                    Most popular
+                  </span>
+                )}
+                <div className="font-display text-lg font-semibold">{tier.name}</div>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="font-display text-4xl font-bold">{tier.price}</span>
+                  <span className="text-sm text-muted-foreground">{tier.cadence}</span>
+                </div>
+                <ul className="mt-6 flex-1 space-y-2 text-sm">
+                  {tier.features.map((f) => (
+                    <li key={f} className="flex gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <span className="text-foreground/90">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  to="/hub"
+                  className={`mt-6 inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold ${
+                    tier.highlight
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                      : "border border-border bg-card/60 hover:bg-accent"
+                  }`}
+                >
+                  {tier.cta}
+                </Link>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
