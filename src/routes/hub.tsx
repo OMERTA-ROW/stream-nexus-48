@@ -82,14 +82,32 @@ function metaFor(k: SourceKind) {
 const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok"];
 
 function Hub() {
+  const navigate = useNavigate();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [platform, setPlatform] = useState<Platform>("twitch");
   const [handle, setHandle] = useState("");
   const [filter, setFilter] = useState<Platform | "all">("all");
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [creatingRoom, setCreatingRoom] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+
+  const createRoom = async () => {
+    setCreatingRoom(true);
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const code =
+      Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("") +
+      "-" +
+      Array.from({ length: 2 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+    const { error } = await supabase.from("rooms").insert({ code });
+    setCreatingRoom(false);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    navigate({ to: "/r/$code", params: { code } });
+  };
 
   useEffect(() => {
     try {
