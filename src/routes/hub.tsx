@@ -180,9 +180,20 @@ function Hub() {
           <span className="on-air-dot" aria-hidden />
           OmniCast
         </Link>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Radio className="h-3.5 w-3.5" />
-          {channels.length} channel{channels.length === 1 ? "" : "s"} loaded
+        <div className="flex items-center gap-2">
+          <button
+            onClick={createRoom}
+            disabled={creatingRoom}
+            className="inline-flex items-center gap-1.5 rounded-md border border-primary/60 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 disabled:opacity-50"
+            title="Create a shared room and pair other devices"
+          >
+            <Users className="h-3.5 w-3.5" />
+            {creatingRoom ? "Creating…" : "Create shared room"}
+          </button>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Radio className="h-3.5 w-3.5" />
+            {channels.length} channel{channels.length === 1 ? "" : "s"}
+          </div>
         </div>
       </header>
 
