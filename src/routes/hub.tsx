@@ -1,8 +1,37 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users, RotateCw, Activity } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { connectTwitch, type ChatMessage, type Platform } from "@/lib/chat-sources";
+import { connectTwitch, type ChatMessage, type ConnectionState, type Platform } from "@/lib/chat-sources";
+
+type HealthLevel = "live" | "connecting" | "degraded" | "failed" | "idle";
+interface Health {
+  level: HealthLevel;
+  label: string;
+  detail?: string;
+  lastAt?: number;
+}
+const HEALTH_COLORS: Record<HealthLevel, string> = {
+  live: "#22c55e",
+  connecting: "#f59e0b",
+  degraded: "#f59e0b",
+  failed: "#ef4444",
+  idle: "#6b7280",
+};
+function healthFromChat(s: ConnectionState | undefined): Health {
+  if (!s) return { level: "connecting", label: "Connecting" };
+  const stale = s.lastMessageAt && Date.now() - s.lastMessageAt > 90_000;
+  if (s.status === "live") {
+    return stale
+      ? { level: "degraded", label: "Quiet", detail: "No messages for 90s+", lastAt: s.lastMessageAt }
+      : { level: "live", label: "Live", lastAt: s.lastMessageAt };
+  }
+  if (s.status === "connecting") return { level: "connecting", label: "Connecting" };
+  if (s.status === "reconnecting")
+    return { level: "degraded", label: `Reconnecting${s.retry ? ` (${s.retry})` : ""}`, detail: s.reason };
+  if (s.status === "failed") return { level: "failed", label: "Failed", detail: s.reason };
+  return { level: "idle", label: "Closed" };
+}
 
 export const Route = createFileRoute("/hub")({
   head: () => ({
@@ -109,6 +138,19 @@ function Hub() {
     navigate({ to: "/r/$code", params: { code } });
   };
 
+  const [chatHealth, setChatHealth] = useState<Record<string, Health>>({});
+  const [tileHealth, setTileHealth] = useState<Record<string, Health>>({});
+  const chatSourcesRef = useRef<Record<string, { reconnect: () => void }>>({});
+  const reconnectTileRef = useRef<Record<string, () => void>>({});
+
+  const setTileHealthFor = useCallback((id: string, h: Health) => {
+    setTileHealth((prev) => (prev[id]?.level === h.level && prev[id]?.label === h.label ? prev : { ...prev, [id]: h }));
+  }, []);
+  const registerTileReconnect = useCallback((id: string, fn: () => void) => {
+    reconnectTileRef.current[id] = fn;
+    return () => { delete reconnectTileRef.current[id]; };
+  }, []);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem("omnicast:channels");
@@ -122,18 +164,43 @@ function Hub() {
   }, [channels]);
 
   useEffect(() => {
+    const map: Record<string, { reconnect: () => void }> = {};
     const sources = channels
       .filter((c) => c.platform === "twitch")
-      .map((c) =>
-        connectTwitch(c.handle, (m) =>
-          setMessages((prev) => {
-            const next = [...prev, m];
-            return next.length > 500 ? next.slice(-500) : next;
-          }),
-        ),
-      );
+      .map((c) => {
+        const src = connectTwitch(
+          c.handle,
+          (m) =>
+            setMessages((prev) => {
+              const next = [...prev, m];
+              return next.length > 500 ? next.slice(-500) : next;
+            }),
+          (state) => setChatHealth((prev) => ({ ...prev, [c.id]: healthFromChat(state) })),
+        );
+        map[c.id] = src;
+        return src;
+      });
+    chatSourcesRef.current = map;
     return () => sources.forEach((s) => s.close());
   }, [channels]);
+
+  // Freshness sweep — mark any 'live' chat as 'degraded' after 90s of silence.
+  useEffect(() => {
+    const t = setInterval(() => {
+      setChatHealth((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [id, h] of Object.entries(prev)) {
+          if (h.level === "live" && h.lastAt && Date.now() - h.lastAt > 90_000) {
+            next[id] = { ...h, level: "degraded", label: "Quiet", detail: "No messages for 90s+" };
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     if (!stickToBottom.current || !scrollerRef.current) return;
@@ -165,6 +232,8 @@ function Hub() {
 
   const removeChannel = (id: string) => {
     setChannels((prev) => prev.filter((c) => c.id !== id));
+    setChatHealth((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    setTileHealth((prev) => { const n = { ...prev }; delete n[id]; return n; });
     setMessages((prev) =>
       prev.filter((m) => {
         const c = channels.find((x) => x.id === id);
@@ -172,6 +241,35 @@ function Hub() {
       }),
     );
   };
+
+  const reconnectChannel = (id: string) => {
+    chatSourcesRef.current[id]?.reconnect();
+    reconnectTileRef.current[id]?.();
+  };
+  const reconnectAll = () => {
+    Object.values(chatSourcesRef.current).forEach((s) => s.reconnect());
+    Object.values(reconnectTileRef.current).forEach((fn) => fn());
+  };
+
+  const combinedHealth = (id: string, platform: SourceKind): Health => {
+    if (platform === "camera") return tileHealth[id] ?? { level: "connecting", label: "Starting" };
+    if (platform === "twitch") {
+      const chat = chatHealth[id];
+      const tile = tileHealth[id];
+      // Chat health takes precedence when worse than tile.
+      const rank: Record<HealthLevel, number> = { live: 0, connecting: 1, degraded: 2, failed: 3, idle: 4 };
+      const chatH = chat ?? { level: "connecting" as const, label: "Connecting" };
+      const tileH = tile ?? { level: "connecting" as const, label: "Loading" };
+      return rank[chatH.level] >= rank[tileH.level] ? chatH : tileH;
+    }
+    return tileHealth[id] ?? { level: "connecting", label: "Loading" };
+  };
+
+  const degradedCount = channels.filter((c) => {
+    const h = combinedHealth(c.id, c.platform);
+    return h.level === "degraded" || h.level === "failed";
+  }).length;
+
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -190,12 +288,27 @@ function Hub() {
             <Users className="h-3.5 w-3.5" />
             {creatingRoom ? "Creating…" : "Create shared room"}
           </button>
+          {channels.length > 0 && (
+            <button
+              onClick={reconnectAll}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                degradedCount > 0
+                  ? "border-amber-500/60 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 animate-pulse"
+                  : "border-border bg-background/60 text-muted-foreground hover:bg-accent"
+              }`}
+              title={degradedCount > 0 ? `${degradedCount} feed${degradedCount === 1 ? "" : "s"} degraded — click to reconnect all` : "All feeds healthy — force reconnect"}
+            >
+              <Activity className="h-3.5 w-3.5" />
+              {degradedCount > 0 ? `${degradedCount} degraded` : "All healthy"}
+            </button>
+          )}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Radio className="h-3.5 w-3.5" />
             {channels.length} channel{channels.length === 1 ? "" : "s"}
           </div>
         </div>
       </header>
+
 
       <div className="border-b border-border/60 bg-card/40 px-4 py-3">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
@@ -237,16 +350,29 @@ function Hub() {
           <div className="mx-auto mt-2 flex max-w-6xl flex-wrap gap-1.5">
             {channels.map((c) => {
               const m = metaFor(c.platform);
+              const h = combinedHealth(c.id, c.platform);
               return (
                 <span
                   key={c.id}
                   className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-xs"
+                  title={`${h.label}${h.detail ? ` — ${h.detail}` : ""}`}
                 >
                   <span
                     className="h-1.5 w-1.5 rounded-full"
                     style={{ backgroundColor: m.color }}
                   />
                   {m.short} · {c.label ?? c.handle}
+                  <StatusDot level={h.level} />
+                  {(h.level === "degraded" || h.level === "failed") && (
+                    <button
+                      onClick={() => reconnectChannel(c.id)}
+                      className="rounded p-0.5 text-amber-400 hover:bg-amber-500/20"
+                      aria-label="Reconnect"
+                      title="Reconnect this feed"
+                    >
+                      <RotateCw className="h-3 w-3" />
+                    </button>
+                  )}
                   <button
                     onClick={() => removeChannel(c.id)}
                     className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -259,6 +385,7 @@ function Hub() {
             })}
           </div>
         )}
+
       </div>
 
       <div className="flex flex-1 flex-col lg:flex-row">
@@ -274,11 +401,24 @@ function Hub() {
             >
               {channels.map((c) =>
                 c.platform === "camera" ? (
-                  <CameraTile key={c.id} channel={c} />
+                  <CameraTile
+                    key={c.id}
+                    channel={c}
+                    onHealth={(h) => setTileHealthFor(c.id, h)}
+                    registerReconnect={(fn) => registerTileReconnect(c.id, fn)}
+                  />
                 ) : (
-                  <StreamTile key={c.id} channel={c} />
+                  <StreamTile
+                    key={c.id}
+                    channel={c}
+                    chatHealth={c.platform === "twitch" ? chatHealth[c.id] : undefined}
+                    onHealth={(h) => setTileHealthFor(c.id, h)}
+                    registerReconnect={(fn) => registerTileReconnect(c.id, fn)}
+                    onReconnectChat={c.platform === "twitch" ? () => reconnectChannel(c.id) : undefined}
+                  />
                 ),
               )}
+
             </div>
           )}
         </div>
@@ -376,29 +516,107 @@ function EmptyState({ onCamera }: { onCamera: () => void }) {
   );
 }
 
-function StreamTile({ channel }: { channel: Channel }) {
+function StatusDot({ level }: { level: HealthLevel }) {
+  const pulse = level === "connecting" || level === "degraded";
+  return (
+    <span
+      aria-label={level}
+      className={`inline-block h-2 w-2 rounded-full ${pulse ? "animate-pulse" : ""}`}
+      style={{ backgroundColor: HEALTH_COLORS[level], boxShadow: `0 0 6px ${HEALTH_COLORS[level]}` }}
+    />
+  );
+}
+
+interface TileProps {
+  channel: Channel;
+  onHealth: (h: Health) => void;
+  registerReconnect: (fn: () => void) => () => void;
+}
+
+function StreamTile({
+  channel,
+  chatHealth,
+  onHealth,
+  registerReconnect,
+  onReconnectChat,
+}: TileProps & { chatHealth?: Health; onReconnectChat?: () => void }) {
   const meta = PLATFORM_META[channel.platform as Platform];
   const [src, setSrc] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const [tileHealth, setTileHealth] = useState<Health>({ level: "connecting", label: "Loading" });
+  const loadedRef = useRef(false);
+
+  const reload = useCallback(() => {
+    loadedRef.current = false;
+    setTileHealth({ level: "connecting", label: "Reloading" });
+    setNonce((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     setSrc(meta.embed(channel.handle));
-  }, [channel.handle, channel.platform, meta]);
+    loadedRef.current = false;
+    setTileHealth({ level: "connecting", label: "Loading" });
+  }, [channel.handle, channel.platform, meta, nonce]);
+
+  // If iframe hasn't fired onLoad within 12s, treat as degraded.
+  useEffect(() => {
+    if (!src) {
+      const h: Health = { level: "failed", label: "No embed", detail: "Platform has no embeddable player" };
+      setTileHealth(h);
+      return;
+    }
+    const t = setTimeout(() => {
+      if (!loadedRef.current) setTileHealth({ level: "degraded", label: "Slow", detail: "Player took too long to load" });
+    }, 12_000);
+    return () => clearTimeout(t);
+  }, [src, nonce]);
+
+  useEffect(() => { onHealth(tileHealth); }, [tileHealth, onHealth]);
+  useEffect(() => registerReconnect(reload), [registerReconnect, reload]);
+
+  const shown = chatHealth ?? tileHealth;
+  const showReconnect = shown.level === "degraded" || shown.level === "failed" || tileHealth.level !== "live";
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-black/60">
-      <div className="flex items-center justify-between border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: meta.color }} />
           <span className="font-semibold">{meta.label}</span>
-          <span className="text-muted-foreground">· {channel.handle}</span>
+          <span className="truncate text-muted-foreground">· {channel.handle}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-1.5 py-0.5"
+            title={shown.detail ?? shown.label}
+            style={{ borderColor: `color-mix(in oklch, ${HEALTH_COLORS[shown.level]} 40%, transparent)` }}
+          >
+            <StatusDot level={shown.level} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: HEALTH_COLORS[shown.level] }}>
+              {shown.label}
+            </span>
+          </span>
+          {showReconnect && (
+            <button
+              onClick={() => { reload(); onReconnectChat?.(); }}
+              className="rounded-md border border-border bg-background/60 p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Reconnect"
+              title="Reload player & chat"
+            >
+              <RotateCw className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
       <div className="relative aspect-video">
         {src ? (
           <iframe
+            key={nonce}
             title={`${meta.label} ${channel.handle}`}
             src={src}
             allow="autoplay; encrypted-media; fullscreen"
             allowFullScreen
+            onLoad={() => { loadedRef.current = true; setTileHealth({ level: "live", label: "Live" }); }}
             className="absolute inset-0 h-full w-full"
           />
         ) : (
@@ -419,10 +637,17 @@ function StreamTile({ channel }: { channel: Channel }) {
   );
 }
 
-function CameraTile({ channel }: { channel: Channel }) {
+function CameraTile({ channel, onHealth, registerReconnect }: TileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [live, setLive] = useState(false);
+  const [tileHealth, setTileHealth] = useState<Health>({ level: "connecting", label: "Starting" });
+  const [restartKey, setRestartKey] = useState(0);
+
+  const restart = useCallback(() => {
+    setErr(null);
+    setTileHealth({ level: "connecting", label: "Restarting" });
+    setRestartKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -437,31 +662,61 @@ function CameraTile({ channel }: { channel: Channel }) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
-          setLive(true);
+          setTileHealth({ level: "live", label: "Live" });
+        }
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          track.onended = () => setTileHealth({ level: "failed", label: "Disconnected", detail: "Camera track ended" });
+          track.onmute = () => setTileHealth({ level: "degraded", label: "Muted", detail: "Camera track muted" });
+          track.onunmute = () => setTileHealth({ level: "live", label: "Live" });
         }
       } catch (e: unknown) {
-        setErr(e instanceof Error ? e.message : "Camera unavailable");
+        const msg = e instanceof Error ? e.message : "Camera unavailable";
+        setErr(msg);
+        setTileHealth({ level: "failed", label: "Failed", detail: msg });
       }
     })();
     return () => {
       cancelled = true;
       if (stream) stream.getTracks().forEach((t) => t.stop());
     };
-  }, [channel.handle]);
+  }, [channel.handle, restartKey]);
+
+  useEffect(() => { onHealth(tileHealth); }, [tileHealth, onHealth]);
+  useEffect(() => registerReconnect(restart), [registerReconnect, restart]);
+
+  const showReconnect = tileHealth.level === "degraded" || tileHealth.level === "failed";
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-black/60">
-      <div className="flex items-center justify-between border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: CAMERA_META.color }} />
           <span className="font-semibold">Camera</span>
-          <span className="text-muted-foreground">· {channel.label ?? "device"}</span>
+          <span className="truncate text-muted-foreground">· {channel.label ?? "device"}</span>
         </div>
-        {live && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-500">
-            <span className="on-air-dot" aria-hidden /> Live
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border px-1.5 py-0.5"
+            title={tileHealth.detail ?? tileHealth.label}
+            style={{ borderColor: `color-mix(in oklch, ${HEALTH_COLORS[tileHealth.level]} 40%, transparent)` }}
+          >
+            <StatusDot level={tileHealth.level} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: HEALTH_COLORS[tileHealth.level] }}>
+              {tileHealth.label}
+            </span>
           </span>
-        )}
+          {showReconnect && (
+            <button
+              onClick={restart}
+              className="rounded-md border border-border bg-background/60 p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Reconnect camera"
+              title="Restart camera"
+            >
+              <RotateCw className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="relative aspect-video">
         {err ? (
@@ -480,6 +735,7 @@ function CameraTile({ channel }: { channel: Channel }) {
     </div>
   );
 }
+
 
 function CameraPicker({
   onClose,
