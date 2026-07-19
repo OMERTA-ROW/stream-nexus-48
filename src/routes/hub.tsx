@@ -401,11 +401,24 @@ function Hub() {
             >
               {channels.map((c) =>
                 c.platform === "camera" ? (
-                  <CameraTile key={c.id} channel={c} />
+                  <CameraTile
+                    key={c.id}
+                    channel={c}
+                    onHealth={(h) => setTileHealthFor(c.id, h)}
+                    registerReconnect={(fn) => registerTileReconnect(c.id, fn)}
+                  />
                 ) : (
-                  <StreamTile key={c.id} channel={c} />
+                  <StreamTile
+                    key={c.id}
+                    channel={c}
+                    chatHealth={c.platform === "twitch" ? chatHealth[c.id] : undefined}
+                    onHealth={(h) => setTileHealthFor(c.id, h)}
+                    registerReconnect={(fn) => registerTileReconnect(c.id, fn)}
+                    onReconnectChat={c.platform === "twitch" ? () => reconnectChannel(c.id) : undefined}
+                  />
                 ),
               )}
+
             </div>
           )}
         </div>
