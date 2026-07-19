@@ -26,6 +26,9 @@ function Landing() {
             <a href="#how" className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground">
               How it works
             </a>
+            <a href="#pricing" className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground">
+              Pricing
+            </a>
             <a href="#truth" className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground">
               What's real
             </a>
