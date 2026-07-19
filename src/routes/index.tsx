@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Radio, MessagesSquare, Grid2x2, ShieldAlert } from "lucide-react";
+import { Radio, MessagesSquare, Grid2x2, ShieldAlert, Check } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Landing,
