@@ -5,6 +5,20 @@
 
 export type Platform = "twitch" | "youtube" | "kick" | "tiktok";
 
+export type ConnectionStatus =
+  | "connecting"
+  | "live"
+  | "reconnecting"
+  | "failed"
+  | "closed";
+
+export interface ConnectionState {
+  status: ConnectionStatus;
+  retry: number;
+  lastMessageAt?: number;
+  reason?: string;
+}
+
 export interface ChatMessage {
   id: string;
   platform: Platform;
@@ -17,9 +31,11 @@ export interface ChatMessage {
 
 export interface ChatSource {
   close: () => void;
+  reconnect: () => void;
 }
 
-type Handler = (m: ChatMessage) => void;
+type MessageHandler = (m: ChatMessage) => void;
+type StatusHandler = (s: ConnectionState) => void;
 
 function parseIrcTags(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -30,7 +46,6 @@ function parseIrcTags(raw: string): Record<string, string> {
   return out;
 }
 
-// Parse a single IRC line from Twitch. Returns null if it's not a chat message.
 function parseTwitchLine(line: string, channel: string): ChatMessage | null {
   if (!line) return null;
   let rest = line;
@@ -40,7 +55,6 @@ function parseTwitchLine(line: string, channel: string): ChatMessage | null {
     tags = parseIrcTags(rest.slice(1, sp));
     rest = rest.slice(sp + 1);
   }
-  // prefix
   let prefix = "";
   if (rest.startsWith(":")) {
     const sp = rest.indexOf(" ");
@@ -65,21 +79,39 @@ function parseTwitchLine(line: string, channel: string): ChatMessage | null {
   };
 }
 
-export function connectTwitch(channel: string, onMessage: Handler): ChatSource {
+export function connectTwitch(
+  channel: string,
+  onMessage: MessageHandler,
+  onStatus?: StatusHandler,
+): ChatSource {
   const chan = channel.toLowerCase().replace(/^#/, "").trim();
-  if (!chan) return { close: () => {} };
+  if (!chan) return { close: () => {}, reconnect: () => {} };
   let closed = false;
   let ws: WebSocket | null = null;
   let retry = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastMessageAt: number | undefined;
+
+  const emit = (status: ConnectionStatus, reason?: string) => {
+    onStatus?.({ status, retry, lastMessageAt, reason });
+  };
 
   const open = () => {
     if (closed) return;
-    ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+    emit(retry === 0 ? "connecting" : "reconnecting");
+    try {
+      ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+    } catch (e) {
+      emit("failed", e instanceof Error ? e.message : "socket error");
+      scheduleRetry();
+      return;
+    }
     ws.onopen = () => {
       retry = 0;
       ws?.send("CAP REQ :twitch.tv/tags twitch.tv/commands");
       ws?.send(`NICK justinfan${Math.floor(Math.random() * 100000)}`);
       ws?.send(`JOIN #${chan}`);
+      emit("live");
     };
     ws.onmessage = (ev) => {
       const data = String(ev.data);
@@ -90,22 +122,46 @@ export function connectTwitch(channel: string, onMessage: Handler): ChatSource {
           continue;
         }
         const msg = parseTwitchLine(line, chan);
-        if (msg) onMessage(msg);
+        if (msg) {
+          lastMessageAt = msg.ts;
+          emit("live");
+          onMessage(msg);
+        }
       }
     };
     ws.onclose = () => {
       if (closed) return;
-      const delay = Math.min(1000 * 2 ** retry++, 15000);
-      setTimeout(open, delay);
+      scheduleRetry();
     };
-    ws.onerror = () => ws?.close();
+    ws.onerror = () => {
+      emit("reconnecting", "socket error");
+      ws?.close();
+    };
   };
+
+  const scheduleRetry = () => {
+    if (closed) return;
+    retry++;
+    emit(retry > 5 ? "failed" : "reconnecting");
+    const delay = Math.min(1000 * 2 ** Math.min(retry, 4), 15000);
+    retryTimer = setTimeout(open, delay);
+  };
+
   open();
 
   return {
     close: () => {
       closed = true;
+      if (retryTimer) clearTimeout(retryTimer);
       ws?.close();
+      emit("closed");
+    },
+    reconnect: () => {
+      if (closed) return;
+      retry = 0;
+      if (retryTimer) clearTimeout(retryTimer);
+      try { ws?.close(); } catch { /* ignore */ }
+      open();
     },
   };
 }
