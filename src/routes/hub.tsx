@@ -516,29 +516,107 @@ function EmptyState({ onCamera }: { onCamera: () => void }) {
   );
 }
 
-function StreamTile({ channel }: { channel: Channel }) {
+function StatusDot({ level }: { level: HealthLevel }) {
+  const pulse = level === "connecting" || level === "degraded";
+  return (
+    <span
+      aria-label={level}
+      className={`inline-block h-2 w-2 rounded-full ${pulse ? "animate-pulse" : ""}`}
+      style={{ backgroundColor: HEALTH_COLORS[level], boxShadow: `0 0 6px ${HEALTH_COLORS[level]}` }}
+    />
+  );
+}
+
+interface TileProps {
+  channel: Channel;
+  onHealth: (h: Health) => void;
+  registerReconnect: (fn: () => void) => () => void;
+}
+
+function StreamTile({
+  channel,
+  chatHealth,
+  onHealth,
+  registerReconnect,
+  onReconnectChat,
+}: TileProps & { chatHealth?: Health; onReconnectChat?: () => void }) {
   const meta = PLATFORM_META[channel.platform as Platform];
   const [src, setSrc] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const [tileHealth, setTileHealth] = useState<Health>({ level: "connecting", label: "Loading" });
+  const loadedRef = useRef(false);
+
+  const reload = useCallback(() => {
+    loadedRef.current = false;
+    setTileHealth({ level: "connecting", label: "Reloading" });
+    setNonce((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     setSrc(meta.embed(channel.handle));
-  }, [channel.handle, channel.platform, meta]);
+    loadedRef.current = false;
+    setTileHealth({ level: "connecting", label: "Loading" });
+  }, [channel.handle, channel.platform, meta, nonce]);
+
+  // If iframe hasn't fired onLoad within 12s, treat as degraded.
+  useEffect(() => {
+    if (!src) {
+      const h: Health = { level: "failed", label: "No embed", detail: "Platform has no embeddable player" };
+      setTileHealth(h);
+      return;
+    }
+    const t = setTimeout(() => {
+      if (!loadedRef.current) setTileHealth({ level: "degraded", label: "Slow", detail: "Player took too long to load" });
+    }, 12_000);
+    return () => clearTimeout(t);
+  }, [src, nonce]);
+
+  useEffect(() => { onHealth(tileHealth); }, [tileHealth, onHealth]);
+  useEffect(() => registerReconnect(reload), [registerReconnect, reload]);
+
+  const shown = chatHealth ?? tileHealth;
+  const showReconnect = shown.level === "degraded" || shown.level === "failed" || tileHealth.level !== "live";
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-black/60">
-      <div className="flex items-center justify-between border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: meta.color }} />
           <span className="font-semibold">{meta.label}</span>
-          <span className="text-muted-foreground">· {channel.handle}</span>
+          <span className="truncate text-muted-foreground">· {channel.handle}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-1.5 py-0.5"
+            title={shown.detail ?? shown.label}
+            style={{ borderColor: `color-mix(in oklch, ${HEALTH_COLORS[shown.level]} 40%, transparent)` }}
+          >
+            <StatusDot level={shown.level} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: HEALTH_COLORS[shown.level] }}>
+              {shown.label}
+            </span>
+          </span>
+          {showReconnect && (
+            <button
+              onClick={() => { reload(); onReconnectChat?.(); }}
+              className="rounded-md border border-border bg-background/60 p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Reconnect"
+              title="Reload player & chat"
+            >
+              <RotateCw className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
       <div className="relative aspect-video">
         {src ? (
           <iframe
+            key={nonce}
             title={`${meta.label} ${channel.handle}`}
             src={src}
             allow="autoplay; encrypted-media; fullscreen"
             allowFullScreen
+            onLoad={() => { loadedRef.current = true; setTileHealth({ level: "live", label: "Live" }); }}
             className="absolute inset-0 h-full w-full"
           />
         ) : (
@@ -559,10 +637,17 @@ function StreamTile({ channel }: { channel: Channel }) {
   );
 }
 
-function CameraTile({ channel }: { channel: Channel }) {
+function CameraTile({ channel, onHealth, registerReconnect }: TileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [live, setLive] = useState(false);
+  const [tileHealth, setTileHealth] = useState<Health>({ level: "connecting", label: "Starting" });
+  const [restartKey, setRestartKey] = useState(0);
+
+  const restart = useCallback(() => {
+    setErr(null);
+    setTileHealth({ level: "connecting", label: "Restarting" });
+    setRestartKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -577,31 +662,61 @@ function CameraTile({ channel }: { channel: Channel }) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
-          setLive(true);
+          setTileHealth({ level: "live", label: "Live" });
+        }
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          track.onended = () => setTileHealth({ level: "failed", label: "Disconnected", detail: "Camera track ended" });
+          track.onmute = () => setTileHealth({ level: "degraded", label: "Muted", detail: "Camera track muted" });
+          track.onunmute = () => setTileHealth({ level: "live", label: "Live" });
         }
       } catch (e: unknown) {
-        setErr(e instanceof Error ? e.message : "Camera unavailable");
+        const msg = e instanceof Error ? e.message : "Camera unavailable";
+        setErr(msg);
+        setTileHealth({ level: "failed", label: "Failed", detail: msg });
       }
     })();
     return () => {
       cancelled = true;
       if (stream) stream.getTracks().forEach((t) => t.stop());
     };
-  }, [channel.handle]);
+  }, [channel.handle, restartKey]);
+
+  useEffect(() => { onHealth(tileHealth); }, [tileHealth, onHealth]);
+  useEffect(() => registerReconnect(restart), [registerReconnect, restart]);
+
+  const showReconnect = tileHealth.level === "degraded" || tileHealth.level === "failed";
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-black/60">
-      <div className="flex items-center justify-between border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: CAMERA_META.color }} />
           <span className="font-semibold">Camera</span>
-          <span className="text-muted-foreground">· {channel.label ?? "device"}</span>
+          <span className="truncate text-muted-foreground">· {channel.label ?? "device"}</span>
         </div>
-        {live && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-500">
-            <span className="on-air-dot" aria-hidden /> Live
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border px-1.5 py-0.5"
+            title={tileHealth.detail ?? tileHealth.label}
+            style={{ borderColor: `color-mix(in oklch, ${HEALTH_COLORS[tileHealth.level]} 40%, transparent)` }}
+          >
+            <StatusDot level={tileHealth.level} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: HEALTH_COLORS[tileHealth.level] }}>
+              {tileHealth.label}
+            </span>
           </span>
-        )}
+          {showReconnect && (
+            <button
+              onClick={restart}
+              className="rounded-md border border-border bg-background/60 p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Reconnect camera"
+              title="Restart camera"
+            >
+              <RotateCw className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="relative aspect-video">
         {err ? (
@@ -620,6 +735,7 @@ function CameraTile({ channel }: { channel: Channel }) {
     </div>
   );
 }
+
 
 function CameraPicker({
   onClose,
