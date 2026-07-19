@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Radio, X, Plus, MessagesSquare, Filter } from "lucide-react";
+import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video } from "lucide-react";
 import { connectTwitch, type ChatMessage, type Platform } from "@/lib/chat-sources";
 
 export const Route = createFileRoute("/hub")({
@@ -16,10 +16,14 @@ export const Route = createFileRoute("/hub")({
   component: Hub,
 });
 
+type SourceKind = Platform | "camera";
+
 interface Channel {
   id: string;
-  platform: Platform;
+  platform: SourceKind;
   handle: string;
+  // camera-only: deviceId label for display
+  label?: string;
 }
 
 const PLATFORM_META: Record<
@@ -42,7 +46,6 @@ const PLATFORM_META: Record<
     color: "var(--color-youtube)",
     short: "YT",
     canReadChat: false,
-    // Live stream by channel handle/name — YouTube's live_stream endpoint
     embed: (h) =>
       `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(h)}&autoplay=1&mute=1`,
   },
@@ -58,10 +61,22 @@ const PLATFORM_META: Record<
     color: "var(--color-tiktok)",
     short: "TT",
     canReadChat: false,
-    // TikTok Live has no supported iframe embed — link out.
     embed: () => null,
   },
 };
+
+const CAMERA_META = {
+  label: "Camera",
+  color: "#22d3ee",
+  short: "CAM",
+};
+
+function metaFor(k: SourceKind) {
+  if (k === "camera") {
+    return { label: CAMERA_META.label, color: CAMERA_META.color, short: CAMERA_META.short };
+  }
+  return PLATFORM_META[k];
+}
 
 const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok"];
 
@@ -71,10 +86,10 @@ function Hub() {
   const [platform, setPlatform] = useState<Platform>("twitch");
   const [handle, setHandle] = useState("");
   const [filter, setFilter] = useState<Platform | "all">("all");
+  const [cameraOpen, setCameraOpen] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
-  // Persist channels
   useEffect(() => {
     try {
       const raw = localStorage.getItem("omnicast:channels");
@@ -87,7 +102,6 @@ function Hub() {
     } catch { /* ignore */ }
   }, [channels]);
 
-  // Wire up chat sources
   useEffect(() => {
     const sources = channels
       .filter((c) => c.platform === "twitch")
@@ -102,7 +116,6 @@ function Hub() {
     return () => sources.forEach((s) => s.close());
   }, [channels]);
 
-  // Auto-scroll
   useEffect(() => {
     if (!stickToBottom.current || !scrollerRef.current) return;
     scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
@@ -123,20 +136,26 @@ function Hub() {
     setHandle("");
   };
 
+  const addCamera = (deviceId: string, label: string) => {
+    setChannels((prev) => [
+      ...prev,
+      { id: `camera:${deviceId}:${Date.now()}`, platform: "camera", handle: deviceId, label },
+    ]);
+    setCameraOpen(false);
+  };
+
   const removeChannel = (id: string) => {
     setChannels((prev) => prev.filter((c) => c.id !== id));
-    // drop that channel's messages
     setMessages((prev) =>
       prev.filter((m) => {
         const c = channels.find((x) => x.id === id);
-        return !c || !(m.platform === c.platform && m.channel === c.handle.toLowerCase());
+        return !c || c.platform === "camera" || !(m.platform === c.platform && m.channel === c.handle.toLowerCase());
       }),
     );
   };
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      {/* Top bar */}
       <header className="flex items-center justify-between border-b border-border/60 px-4 py-3">
         <Link to="/" className="flex items-center gap-2 font-display text-base font-semibold">
           <span className="on-air-dot" aria-hidden />
@@ -148,7 +167,6 @@ function Hub() {
         </div>
       </header>
 
-      {/* Add channel bar */}
       <div className="border-b border-border/60 bg-card/40 px-4 py-3">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-md border border-border">
@@ -177,38 +195,46 @@ function Hub() {
           >
             <Plus className="h-4 w-4" /> Add
           </button>
+          <button
+            onClick={() => setCameraOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-accent"
+            title="Connect a camera on this device"
+          >
+            <Camera className="h-4 w-4" /> Camera
+          </button>
         </div>
         {channels.length > 0 && (
           <div className="mx-auto mt-2 flex max-w-6xl flex-wrap gap-1.5">
-            {channels.map((c) => (
-              <span
-                key={c.id}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-xs"
-              >
+            {channels.map((c) => {
+              const m = metaFor(c.platform);
+              return (
                 <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ backgroundColor: PLATFORM_META[c.platform].color }}
-                />
-                {PLATFORM_META[c.platform].short} · {c.handle}
-                <button
-                  onClick={() => removeChannel(c.id)}
-                  className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label="Remove"
+                  key={c.id}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-xs"
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: m.color }}
+                  />
+                  {m.short} · {c.label ?? c.handle}
+                  <button
+                    onClick={() => removeChannel(c.id)}
+                    className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="Remove"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Layout */}
       <div className="flex flex-1 flex-col lg:flex-row">
-        {/* Stream grid */}
         <div className="flex-1 p-4">
           {channels.length === 0 ? (
-            <EmptyState />
+            <EmptyState onCamera={() => setCameraOpen(true)} />
           ) : (
             <div
               className="grid gap-3"
@@ -216,14 +242,17 @@ function Hub() {
                 gridTemplateColumns: `repeat(${Math.min(channels.length, 2)}, minmax(0, 1fr))`,
               }}
             >
-              {channels.map((c) => (
-                <StreamTile key={c.id} channel={c} />
-              ))}
+              {channels.map((c) =>
+                c.platform === "camera" ? (
+                  <CameraTile key={c.id} channel={c} />
+                ) : (
+                  <StreamTile key={c.id} channel={c} />
+                ),
+              )}
             </div>
           )}
         </div>
 
-        {/* Chat column */}
         <aside className="flex w-full flex-col border-t border-border/60 bg-card/40 lg:w-96 lg:border-l lg:border-t-0">
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
             <div className="flex items-center gap-2 font-display text-sm font-semibold">
@@ -287,11 +316,15 @@ function Hub() {
           </div>
         </aside>
       </div>
+
+      {cameraOpen && (
+        <CameraPicker onClose={() => setCameraOpen(false)} onPick={addCamera} />
+      )}
     </div>
   );
 }
 
-function EmptyState() {
+function EmptyState({ onCamera }: { onCamera: () => void }) {
   return (
     <div className="flex h-full min-h-[50vh] items-center justify-center rounded-xl border border-dashed border-border bg-card/30 p-10 text-center">
       <div>
@@ -300,15 +333,21 @@ function EmptyState() {
         </div>
         <h3 className="font-display text-lg font-semibold">No streams loaded</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Pick a platform up top and drop in a channel handle. Add as many as you want — they'll tile automatically.
+          Pick a platform up top and drop in a channel handle, or connect a live camera on this device.
         </p>
+        <button
+          onClick={onCamera}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm font-semibold hover:bg-accent"
+        >
+          <Camera className="h-4 w-4" /> Connect a camera
+        </button>
       </div>
     </div>
   );
 }
 
 function StreamTile({ channel }: { channel: Channel }) {
-  const meta = PLATFORM_META[channel.platform];
+  const meta = PLATFORM_META[channel.platform as Platform];
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     setSrc(meta.embed(channel.handle));
@@ -345,6 +384,151 @@ function StreamTile({ channel }: { channel: Channel }) {
             </a>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function CameraTile({ channel }: { channel: Channel }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: channel.handle } },
+          audio: false,
+        });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+          setLive(true);
+        }
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : "Camera unavailable");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    };
+  }, [channel.handle]);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-black/60">
+      <div className="flex items-center justify-between border-b border-border/60 bg-card/60 px-3 py-1.5 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: CAMERA_META.color }} />
+          <span className="font-semibold">Camera</span>
+          <span className="text-muted-foreground">· {channel.label ?? "device"}</span>
+        </div>
+        {live && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-500">
+            <span className="on-air-dot" aria-hidden /> Live
+          </span>
+        )}
+      </div>
+      <div className="relative aspect-video">
+        {err ? (
+          <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
+            {err}
+          </div>
+        ) : (
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CameraPicker({
+  onClose,
+  onPick,
+}: {
+  onClose: () => void;
+  onPick: (deviceId: string, label: string) => void;
+}) {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    (async () => {
+      try {
+        // Prompt for permission first so device labels populate.
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const list = await navigator.mediaDevices.enumerateDevices();
+        setDevices(list.filter((d) => d.kind === "videoinput"));
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : "Camera access denied");
+      } finally {
+        setLoading(false);
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+      }
+    })();
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <Video className="h-5 w-5 text-primary" />
+          <h2 className="font-display text-lg font-semibold">Connect a camera</h2>
+        </div>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Pick which camera on this device to stream. Switching sources per stream keeps the feed stable.
+        </p>
+        {loading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Requesting camera access…</p>
+        ) : err ? (
+          <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            {err}
+          </p>
+        ) : devices.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No cameras detected on this device.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {devices.map((d, i) => (
+              <li key={d.deviceId || i}>
+                <button
+                  onClick={() => onPick(d.deviceId, d.label || `Camera ${i + 1}`)}
+                  className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-background/60 px-3 py-2 text-left text-sm hover:bg-accent"
+                >
+                  <span className="flex items-center gap-2">
+                    <Camera className="h-4 w-4 text-primary" />
+                    {d.label || `Camera ${i + 1}`}
+                  </span>
+                  <Plus className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={onClose}
+            className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
