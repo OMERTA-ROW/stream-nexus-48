@@ -1,8 +1,37 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users, RotateCw, Activity } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { connectTwitch, type ChatMessage, type Platform } from "@/lib/chat-sources";
+import { connectTwitch, type ChatMessage, type ConnectionState, type Platform } from "@/lib/chat-sources";
+
+type HealthLevel = "live" | "connecting" | "degraded" | "failed" | "idle";
+interface Health {
+  level: HealthLevel;
+  label: string;
+  detail?: string;
+  lastAt?: number;
+}
+const HEALTH_COLORS: Record<HealthLevel, string> = {
+  live: "#22c55e",
+  connecting: "#f59e0b",
+  degraded: "#f59e0b",
+  failed: "#ef4444",
+  idle: "#6b7280",
+};
+function healthFromChat(s: ConnectionState | undefined): Health {
+  if (!s) return { level: "connecting", label: "Connecting" };
+  const stale = s.lastMessageAt && Date.now() - s.lastMessageAt > 90_000;
+  if (s.status === "live") {
+    return stale
+      ? { level: "degraded", label: "Quiet", detail: "No messages for 90s+", lastAt: s.lastMessageAt }
+      : { level: "live", label: "Live", lastAt: s.lastMessageAt };
+  }
+  if (s.status === "connecting") return { level: "connecting", label: "Connecting" };
+  if (s.status === "reconnecting")
+    return { level: "degraded", label: `Reconnecting${s.retry ? ` (${s.retry})` : ""}`, detail: s.reason };
+  if (s.status === "failed") return { level: "failed", label: "Failed", detail: s.reason };
+  return { level: "idle", label: "Closed" };
+}
 
 export const Route = createFileRoute("/hub")({
   head: () => ({
