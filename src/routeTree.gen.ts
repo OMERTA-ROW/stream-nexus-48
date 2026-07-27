@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as HubRouteImport } from './routes/hub'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -17,6 +18,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as RCodeRouteImport } from './routes/r.$code'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 
+const VerifyRoute = VerifyRouteImport.update({
+  id: '/verify',
+  path: '/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/hub': typeof HubRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/verify': typeof VerifyRoute
   '/account': typeof AuthenticatedAccountRoute
   '/r/$code': typeof RCodeRoute
 }
@@ -65,6 +72,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/hub': typeof HubRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/verify': typeof VerifyRoute
   '/account': typeof AuthenticatedAccountRoute
   '/r/$code': typeof RCodeRoute
 }
@@ -75,14 +83,29 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/hub': typeof HubRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/verify': typeof VerifyRoute
   '/_authenticated/account': typeof AuthenticatedAccountRoute
   '/r/$code': typeof RCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/hub' | '/sitemap.xml' | '/account' | '/r/$code'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/hub'
+    | '/sitemap.xml'
+    | '/verify'
+    | '/account'
+    | '/r/$code'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/hub' | '/sitemap.xml' | '/account' | '/r/$code'
+  to:
+    | '/'
+    | '/auth'
+    | '/hub'
+    | '/sitemap.xml'
+    | '/verify'
+    | '/account'
+    | '/r/$code'
   id:
     | '__root__'
     | '/'
@@ -90,6 +113,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/hub'
     | '/sitemap.xml'
+    | '/verify'
     | '/_authenticated/account'
     | '/r/$code'
   fileRoutesById: FileRoutesById
@@ -100,11 +124,19 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   HubRoute: typeof HubRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  VerifyRoute: typeof VerifyRoute
   RCodeRoute: typeof RCodeRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/verify': {
+      id: '/verify'
+      path: '/verify'
+      fullPath: '/verify'
+      preLoaderRoute: typeof VerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -174,18 +206,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   HubRoute: HubRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  VerifyRoute: VerifyRoute,
   RCodeRoute: RCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
