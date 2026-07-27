@@ -3,7 +3,7 @@
 // Kick / YouTube / TikTok: placeholders for now (require backend / API keys /
 // unofficial scrapers — wired up in later phases).
 
-export type Platform = "twitch" | "youtube" | "kick" | "tiktok" | "facebook" | "snapchat";
+export type Platform = "twitch" | "youtube" | "kick" | "tiktok" | "facebook" | "snapchat" | "streamlabs";
 
 export type ConnectionStatus =
   | "connecting"
