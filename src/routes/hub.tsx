@@ -58,7 +58,7 @@ interface Channel {
 
 const PLATFORM_META: Record<
   Platform,
-  { label: string; color: string; short: string; canReadChat: boolean; embed: (h: string) => string | null }
+  { label: string; color: string; short: string; canReadChat: boolean; embed: (h: string) => string | null; goLive: (h: string) => string }
 > = {
   twitch: {
     label: "Twitch",
@@ -70,6 +70,7 @@ const PLATFORM_META: Record<
       const parent = window.location.hostname;
       return `https://player.twitch.tv/?channel=${encodeURIComponent(h)}&parent=${parent}&muted=true`;
     },
+    goLive: (h) => `https://www.twitch.tv/${h}`,
   },
   youtube: {
     label: "YouTube",
@@ -78,6 +79,7 @@ const PLATFORM_META: Record<
     canReadChat: false,
     embed: (h) =>
       `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(h)}&autoplay=1&mute=1`,
+    goLive: (h) => `https://www.youtube.com/@${h}/live`,
   },
   kick: {
     label: "Kick",
@@ -85,6 +87,7 @@ const PLATFORM_META: Record<
     short: "KK",
     canReadChat: false,
     embed: (h) => `https://player.kick.com/${encodeURIComponent(h)}?muted=true&autoplay=true`,
+    goLive: (h) => `https://kick.com/${h}`,
   },
   tiktok: {
     label: "TikTok",
@@ -92,6 +95,24 @@ const PLATFORM_META: Record<
     short: "TT",
     canReadChat: false,
     embed: () => null,
+    goLive: (h) => `https://www.tiktok.com/@${h}/live`,
+  },
+  facebook: {
+    label: "Facebook",
+    color: "var(--color-facebook)",
+    short: "FB",
+    canReadChat: false,
+    embed: (h) =>
+      `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(`https://www.facebook.com/${h}/live`)}&show_text=false&autoplay=true&mute=1`,
+    goLive: (h) => `https://www.facebook.com/${h}/live_videos`,
+  },
+  snapchat: {
+    label: "Snapchat",
+    color: "var(--color-snapchat)",
+    short: "SC",
+    canReadChat: false,
+    embed: () => null,
+    goLive: (h) => `https://www.snapchat.com/add/${h}`,
   },
 };
 
@@ -108,7 +129,7 @@ function metaFor(k: SourceKind) {
   return PLATFORM_META[k];
 }
 
-const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok"];
+const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok", "facebook", "snapchat"];
 
 function Hub() {
   const navigate = useNavigate();
@@ -620,15 +641,15 @@ function StreamTile({
             className="absolute inset-0 h-full w-full"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/50 p-4 text-center text-sm text-muted-foreground">
-            {meta.label} Live has no embeddable player.{" "}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/50 p-4 text-center text-sm text-muted-foreground">
+            <span>{meta.label} Live has no embeddable player.</span>
             <a
-              className="ml-1 text-primary underline"
-              href={`https://www.tiktok.com/@${channel.handle}/live`}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+              href={meta.goLive(channel.handle)}
               target="_blank"
               rel="noreferrer"
             >
-              Open on {meta.label} →
+              Go Live on {meta.label} →
             </a>
           </div>
         )}

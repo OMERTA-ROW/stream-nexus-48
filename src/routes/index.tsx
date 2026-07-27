@@ -10,6 +10,8 @@ const platforms = [
   { name: "YouTube Live", color: "var(--color-youtube)" },
   { name: "Kick", color: "var(--color-kick)" },
   { name: "TikTok Live", color: "var(--color-tiktok)" },
+  { name: "Facebook Live", color: "var(--color-facebook)" },
+  { name: "Snapchat", color: "var(--color-snapchat)" },
 ];
 
 function Landing() {

@@ -78,10 +78,22 @@ const PLATFORM_META: Record<
     short: "TT",
     embed: () => null,
   },
+  facebook: {
+    label: "Facebook",
+    color: "var(--color-facebook)",
+    short: "FB",
+    embed: (h) => `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(`https://www.facebook.com/${h}/live`)}&show_text=false&autoplay=true&mute=1`,
+  },
+  snapchat: {
+    label: "Snapchat",
+    color: "var(--color-snapchat)",
+    short: "SC",
+    embed: () => null,
+  },
 };
 
 const CAMERA_META = { label: "Camera", color: "#22d3ee", short: "CAM" };
-const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok"];
+const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok", "facebook", "snapchat"];
 
 function metaFor(k: SourceKind) {
   if (k === "camera") return CAMERA_META;
