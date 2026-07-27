@@ -114,6 +114,14 @@ const PLATFORM_META: Record<
     embed: () => null,
     goLive: (h) => `https://www.snapchat.com/add/${h}`,
   },
+  streamlabs: {
+    label: "Streamlabs",
+    color: "var(--color-streamlabs)",
+    short: "SL",
+    canReadChat: false,
+    embed: () => null,
+    goLive: (h) => (h ? `https://streamlabs.com/${h}` : `https://streamlabs.com/dashboard`),
+  },
 };
 
 const CAMERA_META = {
@@ -129,7 +137,7 @@ function metaFor(k: SourceKind) {
   return PLATFORM_META[k];
 }
 
-const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok", "facebook", "snapchat"];
+const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok", "facebook", "snapchat", "streamlabs"];
 
 function Hub() {
   const navigate = useNavigate();
