@@ -90,10 +90,16 @@ const PLATFORM_META: Record<
     short: "SC",
     embed: () => null,
   },
+  streamlabs: {
+    label: "Streamlabs",
+    color: "var(--color-streamlabs)",
+    short: "SL",
+    embed: () => null,
+  },
 };
 
 const CAMERA_META = { label: "Camera", color: "#22d3ee", short: "CAM" };
-const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok", "facebook", "snapchat"];
+const PLATFORMS: Platform[] = ["twitch", "youtube", "kick", "tiktok", "facebook", "snapchat", "streamlabs"];
 
 function metaFor(k: SourceKind) {
   if (k === "camera") return CAMERA_META;
