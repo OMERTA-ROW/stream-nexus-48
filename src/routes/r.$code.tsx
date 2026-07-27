@@ -157,13 +157,23 @@ function RoomPage() {
     } catch { /* ignore */ }
   }, [code, cameraChannels]);
 
-  // Ensure room exists + load channels + subscribe realtime
+  // Load channels + subscribe realtime. Room creation happens in /hub for
+  // signed-in owners; here we only read/join.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // Upsert room existence (ignore conflict)
-        await supabase.from("rooms").insert({ code }).select().maybeSingle();
+        const { data: roomRow, error: roomErr } = await supabase
+          .from("rooms")
+          .select("code")
+          .eq("code", code)
+          .maybeSingle();
+        if (cancelled) return;
+        if (roomErr) throw roomErr;
+        if (!roomRow) {
+          setError("Room not found. Ask the room owner for a fresh link.");
+          return;
+        }
         const { data, error } = await supabase
           .from("room_channels")
           .select("*")
@@ -186,6 +196,7 @@ function RoomPage() {
     })();
     return () => { cancelled = true; };
   }, [code]);
+
 
   useEffect(() => {
     const channel = supabase
