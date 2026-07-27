@@ -216,42 +216,77 @@ function Hub() {
     window.history.replaceState({}, "", url.toString());
   }, []);
 
-  // Signed-in users: load their saved channels from the account so the hub
-  // follows them across devices. Merges with the local list (no duplicates).
   useEffect(() => {
     let cancelled = false;
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    const mergeRow = (row: { id: string; platform: string; handle: string }) => {
+      const p = row.platform as Platform;
+      if (!PLATFORMS.includes(p)) return;
+      setChannels((prev) => {
+        const exists = prev.some(
+          (c) => c.platform === p && c.handle.toLowerCase() === row.handle.toLowerCase(),
+        );
+        if (exists) return prev;
+        return [...prev, { id: `acct-${row.id}`, platform: p, handle: row.handle }];
+      });
+    };
+
     const load = async (userId: string) => {
       const { data, error } = await supabase
         .from("user_channels")
         .select("id, platform, handle")
         .eq("user_id", userId);
       if (error || !data || cancelled) return;
-      setChannels((prev) => {
-        const next = [...prev];
-        for (const row of data) {
-          const p = row.platform as Platform;
-          if (!PLATFORMS.includes(p)) continue;
-          const exists = next.some(
-            (c) => c.platform === p && c.handle.toLowerCase() === row.handle.toLowerCase(),
-          );
-          if (!exists) next.push({ id: `acct-${row.id}`, platform: p, handle: row.handle });
-        }
-        return next;
-      });
+      for (const row of data) mergeRow(row);
     };
+
+    const subscribe = (userId: string) => {
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+      realtimeChannel = supabase
+        .channel(`user_channels:${userId}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "user_channels", filter: `user_id=eq.${userId}` },
+          (payload) => {
+            const row = payload.new as { id: string; platform: string; handle: string };
+            mergeRow(row);
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "user_channels", filter: `user_id=eq.${userId}` },
+          (payload) => {
+            const row = payload.old as { id: string };
+            setChannels((prev) => prev.filter((c) => c.id !== `acct-${row.id}`));
+          },
+        )
+        .subscribe();
+    };
+
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) void load(data.user.id);
+      if (data.user) {
+        void load(data.user.id);
+        subscribe(data.user.id);
+      }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
         void load(session.user.id);
+        subscribe(session.user.id);
+      }
+      if (event === "SIGNED_OUT" && realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+        realtimeChannel = null;
       }
     });
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
     };
   }, []);
+
 
 
 
