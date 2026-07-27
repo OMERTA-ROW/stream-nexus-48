@@ -41,6 +41,7 @@
  --color-tiktok: oklch(0.75 0.18 200);
  --color-facebook: oklch(0.55 0.19 260);
  --color-snapchat: oklch(0.92 0.19 105);
+ --color-streamlabs: oklch(0.72 0.16 155);
 
   --shadow-glow: 0 0 40px -8px oklch(0.7 0.22 25 / 0.4);
 }
