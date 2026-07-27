@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       room_channels: {
         Row: {
           created_at: string
@@ -58,6 +82,45 @@ export type Database = {
         Update: {
           code?: string
           created_at?: string
+        }
+        Relationships: []
+      }
+      streamlabs_connections: {
+        Row: {
+          access_token_ciphertext: string
+          created_at: string
+          expires_at: string | null
+          linked_platforms: Json
+          refresh_token_ciphertext: string | null
+          socket_token_ciphertext: string | null
+          streamlabs_display_name: string | null
+          streamlabs_user_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token_ciphertext: string
+          created_at?: string
+          expires_at?: string | null
+          linked_platforms?: Json
+          refresh_token_ciphertext?: string | null
+          socket_token_ciphertext?: string | null
+          streamlabs_display_name?: string | null
+          streamlabs_user_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token_ciphertext?: string
+          created_at?: string
+          expires_at?: string | null
+          linked_platforms?: Json
+          refresh_token_ciphertext?: string | null
+          socket_token_ciphertext?: string | null
+          streamlabs_display_name?: string | null
+          streamlabs_user_id?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
