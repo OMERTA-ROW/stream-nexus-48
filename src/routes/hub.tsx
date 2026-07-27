@@ -3,9 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users, RotateCw, Activity } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { connectTwitch, type ChatMessage, type ConnectionState, type Platform } from "@/lib/chat-sources";
-import { connectStreamlabs } from "@/lib/streamlabs-chat";
-import { getStreamlabsStatus } from "@/lib/streamlabs.functions";
-import { useServerFn } from "@tanstack/react-start";
+
 
 type HealthLevel = "live" | "connecting" | "degraded" | "failed" | "idle";
 interface Health {
