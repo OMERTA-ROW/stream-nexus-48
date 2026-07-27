@@ -74,14 +74,17 @@ export type Database = {
         Row: {
           code: string
           created_at: string
+          owner_id: string | null
         }
         Insert: {
           code: string
           created_at?: string
+          owner_id?: string | null
         }
         Update: {
           code?: string
           created_at?: string
+          owner_id?: string | null
         }
         Relationships: []
       }
