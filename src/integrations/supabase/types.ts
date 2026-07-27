@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      coupon_codes: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          lifetime: boolean
+          max_uses: number | null
+          plan: string
+          uses: number
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          lifetime?: boolean
+          max_uses?: number | null
+          plan: string
+          uses?: number
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          lifetime?: boolean
+          max_uses?: number | null
+          plan?: string
+          uses?: number
+        }
+        Relationships: []
+      }
+      entitlements: {
+        Row: {
+          created_at: string
+          lifetime: boolean
+          plan: string
+          redeemed_code: string | null
+          source: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          lifetime?: boolean
+          plan?: string
+          redeemed_code?: string | null
+          source?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          lifetime?: boolean
+          plan?: string
+          redeemed_code?: string | null
+          source?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
