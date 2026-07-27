@@ -195,6 +195,61 @@ function Hub() {
     } catch { /* ignore */ }
   }, [channels]);
 
+  // Merge any ?add=platform:handle query params in (used by /account "Open hub with these channels").
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const adds = params.getAll("add");
+    if (!adds.length) return;
+    setChannels((prev) => {
+      const next = [...prev];
+      for (const raw of adds) {
+        const [p, h] = raw.split(":");
+        if (!p || !h) continue;
+        if (!PLATFORMS.includes(p as Platform)) continue;
+        const exists = next.some((c) => c.platform === p && c.handle.toLowerCase() === h.toLowerCase());
+        if (!exists) next.push({ id: `${p}-${h}-${Date.now()}`, platform: p as Platform, handle: h });
+      }
+      return next;
+    });
+    // strip the query so refresh doesn't re-add
+    const url = new URL(window.location.href);
+    url.search = "";
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  // Streamlabs merged chat — subscribes when the signed-in user has linked Streamlabs.
+  const fetchStreamlabsStatus = useServerFn(getStreamlabsStatus);
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user || cancelled) return;
+      try {
+        const s = await fetchStreamlabsStatus();
+        if (cancelled || !s.connected || !s.socketToken) return;
+        const src = connectStreamlabs(
+          s.socketToken,
+          (m) =>
+            setMessages((prev) => {
+              const next = [...prev, m];
+              return next.length > 500 ? next.slice(-500) : next;
+            }),
+          (state) => setChatHealth((prev) => ({ ...prev, __streamlabs: healthFromChat(state) })),
+        );
+        cleanup = () => src.close();
+      } catch (err) {
+        console.error("streamlabs chat init failed", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [fetchStreamlabsStatus]);
+
+
   useEffect(() => {
     const map: Record<string, { reconnect: () => void }> = {};
     const sources = channels
