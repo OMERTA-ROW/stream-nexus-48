@@ -39,6 +39,10 @@ function AccountPage() {
   const [platform, setPlatform] = useState<Platform>("twitch");
   const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<string>("free");
+  const [lifetime, setLifetime] = useState(false);
+  const [coupon, setCoupon] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
 
   const refresh = async () => {
     const { data, error } = await supabase
@@ -52,10 +56,58 @@ function AccountPage() {
     setRows((data ?? []) as Row[]);
   };
 
+  const refreshEntitlement = async () => {
+    const { data } = await supabase
+      .from("entitlements")
+      .select("plan, lifetime")
+      .maybeSingle();
+    if (data) {
+      setPlan(data.plan);
+      setLifetime(data.lifetime);
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
     void refresh();
+    void refreshEntitlement();
   }, []);
+
+  const redeem = async () => {
+    const code = coupon.trim();
+    if (!code) return;
+    setRedeeming(true);
+    const { data: u } = await supabase.auth.getUser();
+    if (!u.user) {
+      setRedeeming(false);
+      return;
+    }
+    const { data: c, error: ce } = await supabase
+      .from("coupon_codes")
+      .select("code, plan, lifetime")
+      .eq("code", code)
+      .maybeSingle();
+    if (ce || !c) {
+      setRedeeming(false);
+      toast.error("Invalid coupon code.");
+      return;
+    }
+    const { error } = await supabase.from("entitlements").upsert({
+      user_id: u.user.id,
+      plan: c.plan,
+      lifetime: c.lifetime,
+      source: "coupon",
+      redeemed_code: c.code,
+    });
+    setRedeeming(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setCoupon("");
+    toast.success(`Redeemed — ${c.plan}${c.lifetime ? " (lifetime)" : ""} unlocked!`);
+    await refreshEntitlement();
+  };
 
   const add = async () => {
     const h = handle.trim();
