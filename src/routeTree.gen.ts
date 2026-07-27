@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as HubRouteImport } from './routes/hub'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RCodeRouteImport } from './routes/r.$code'
+import { Route as ApiPublicStreamlabsCallbackRouteImport } from './routes/api/public/streamlabs/callback'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -34,18 +35,26 @@ const RCodeRoute = RCodeRouteImport.update({
   path: '/r/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicStreamlabsCallbackRoute =
+  ApiPublicStreamlabsCallbackRouteImport.update({
+    id: '/api/public/streamlabs/callback',
+    path: '/api/public/streamlabs/callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/hub': typeof HubRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/r/$code': typeof RCodeRoute
+  '/api/public/streamlabs/callback': typeof ApiPublicStreamlabsCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/hub': typeof HubRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/r/$code': typeof RCodeRoute
+  '/api/public/streamlabs/callback': typeof ApiPublicStreamlabsCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +62,30 @@ export interface FileRoutesById {
   '/hub': typeof HubRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/r/$code': typeof RCodeRoute
+  '/api/public/streamlabs/callback': typeof ApiPublicStreamlabsCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/hub' | '/sitemap.xml' | '/r/$code'
+  fullPaths:
+    | '/'
+    | '/hub'
+    | '/sitemap.xml'
+    | '/r/$code'
+    | '/api/public/streamlabs/callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/hub' | '/sitemap.xml' | '/r/$code'
-  id: '__root__' | '/' | '/hub' | '/sitemap.xml' | '/r/$code'
+  to:
+    | '/'
+    | '/hub'
+    | '/sitemap.xml'
+    | '/r/$code'
+    | '/api/public/streamlabs/callback'
+  id:
+    | '__root__'
+    | '/'
+    | '/hub'
+    | '/sitemap.xml'
+    | '/r/$code'
+    | '/api/public/streamlabs/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +93,7 @@ export interface RootRouteChildren {
   HubRoute: typeof HubRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   RCodeRoute: typeof RCodeRoute
+  ApiPublicStreamlabsCallbackRoute: typeof ApiPublicStreamlabsCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +126,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/streamlabs/callback': {
+      id: '/api/public/streamlabs/callback'
+      path: '/api/public/streamlabs/callback'
+      fullPath: '/api/public/streamlabs/callback'
+      preLoaderRoute: typeof ApiPublicStreamlabsCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +141,7 @@ const rootRouteChildren: RootRouteChildren = {
   HubRoute: HubRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   RCodeRoute: RCodeRoute,
+  ApiPublicStreamlabsCallbackRoute: ApiPublicStreamlabsCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

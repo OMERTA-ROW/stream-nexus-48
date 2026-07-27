@@ -1,14 +1,20 @@
 import { io, type Socket } from "socket.io-client";
-import type { ChatMessage, ConnectionState } from "./chat-sources";
+import type { ChatMessage, ChatSource, ConnectionState, ConnectionStatus } from "./chat-sources";
 
 // Subscribe to a Streamlabs socket.io feed. Emits merged chat + tip/follow events.
 export function connectStreamlabs(
   socketToken: string,
   onMessage: (m: ChatMessage) => void,
-  onStatus: (s: ConnectionState) => void,
-) {
+  onStatus?: (s: ConnectionState) => void,
+): ChatSource {
   let closed = false;
-  onStatus({ status: "connecting", retries: 0, lastMessageAt: null });
+  let retry = 0;
+  let lastMessageAt: number | undefined;
+
+  const emit = (status: ConnectionStatus, reason?: string) =>
+    onStatus?.({ status, retry, lastMessageAt, reason });
+
+  emit("connecting");
 
   const socket: Socket = io(`https://sockets.streamlabs.com?token=${encodeURIComponent(socketToken)}`, {
     transports: ["websocket"],
@@ -16,55 +22,62 @@ export function connectStreamlabs(
     reconnectionAttempts: Infinity,
   });
 
-  let retries = 0;
-  let lastMessageAt: number | null = null;
-
   socket.on("connect", () => {
-    retries = 0;
-    onStatus({ status: "live", retries, lastMessageAt });
+    retry = 0;
+    emit("live");
   });
   socket.on("disconnect", () => {
     if (closed) return;
-    onStatus({ status: "connecting", retries: ++retries, lastMessageAt });
+    retry++;
+    emit("reconnecting");
   });
-  socket.on("connect_error", () => {
+  socket.on("connect_error", (err: Error) => {
     if (closed) return;
-    onStatus({ status: "failed", retries: ++retries, lastMessageAt });
+    retry++;
+    emit(retry > 5 ? "failed" : "reconnecting", err?.message);
   });
 
   socket.on("event", (payload: { type?: string; for?: string; message?: unknown[] }) => {
     if (!payload || !Array.isArray(payload.message)) return;
-    const platform = (payload.for as string | undefined) ?? "streamlabs";
+    const src = (payload.for as string | undefined) ?? "streamlabs";
     for (const raw of payload.message) {
       const item = raw as Record<string, unknown>;
       const text =
-        (item.message as string) ??
-        (item.raw_message as string) ??
-        (item.formatted_amount ? `Tipped ${item.formatted_amount}` : "") ??
-        "";
-      const user =
-        (item.from as string) ??
-        (item.name as string) ??
-        (item.display_name as string) ??
-        (item.username as string) ??
+        (item.message as string | undefined) ??
+        (item.raw_message as string | undefined) ??
+        (item.formatted_amount ? `Tipped ${String(item.formatted_amount)}` : "");
+      const author =
+        (item.from as string | undefined) ??
+        (item.name as string | undefined) ??
+        (item.display_name as string | undefined) ??
+        (item.username as string | undefined) ??
         "streamlabs";
       if (!text) continue;
       const id = String(item._id ?? item.id ?? `${Date.now()}-${Math.random()}`);
+      const ts = Date.now();
+      lastMessageAt = ts;
       onMessage({
         id: `sl-${id}`,
         platform: "streamlabs",
-        channel: platform,
-        user: String(user),
+        channel: src,
+        author: String(author),
         text: String(text),
-        ts: Date.now(),
+        ts,
       });
-      lastMessageAt = Date.now();
     }
   });
 
-  return () => {
-    closed = true;
-    socket.close();
-    onStatus({ status: "idle", retries: 0, lastMessageAt });
+  return {
+    close: () => {
+      closed = true;
+      socket.close();
+      emit("closed");
+    },
+    reconnect: () => {
+      if (closed) return;
+      retry = 0;
+      socket.disconnect();
+      socket.connect();
+    },
   };
 }
