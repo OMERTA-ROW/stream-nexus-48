@@ -216,36 +216,43 @@ function Hub() {
     window.history.replaceState({}, "", url.toString());
   }, []);
 
-  // Streamlabs merged chat — subscribes when the signed-in user has linked Streamlabs.
-  const fetchStreamlabsStatus = useServerFn(getStreamlabsStatus);
+  // Signed-in users: load their saved channels from the account so the hub
+  // follows them across devices. Merges with the local list (no duplicates).
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
     let cancelled = false;
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user || cancelled) return;
-      try {
-        const s = await fetchStreamlabsStatus();
-        if (cancelled || !s.connected || !s.socketToken) return;
-        const src = connectStreamlabs(
-          s.socketToken,
-          (m) =>
-            setMessages((prev) => {
-              const next = [...prev, m];
-              return next.length > 500 ? next.slice(-500) : next;
-            }),
-          (state) => setChatHealth((prev) => ({ ...prev, __streamlabs: healthFromChat(state) })),
-        );
-        cleanup = () => src.close();
-      } catch (err) {
-        console.error("streamlabs chat init failed", err);
+    const load = async (userId: string) => {
+      const { data, error } = await supabase
+        .from("user_channels")
+        .select("id, platform, handle")
+        .eq("user_id", userId);
+      if (error || !data || cancelled) return;
+      setChannels((prev) => {
+        const next = [...prev];
+        for (const row of data) {
+          const p = row.platform as Platform;
+          if (!PLATFORMS.includes(p)) continue;
+          const exists = next.some(
+            (c) => c.platform === p && c.handle.toLowerCase() === row.handle.toLowerCase(),
+          );
+          if (!exists) next.push({ id: `acct-${row.id}`, platform: p, handle: row.handle });
+        }
+        return next;
+      });
+    };
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) void load(data.user.id);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
+        void load(session.user.id);
       }
-    })();
+    });
     return () => {
       cancelled = true;
-      cleanup?.();
+      sub.subscription.unsubscribe();
     };
-  }, [fetchStreamlabsStatus]);
+  }, []);
+
 
 
   useEffect(() => {
