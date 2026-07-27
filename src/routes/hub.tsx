@@ -154,12 +154,18 @@ function Hub() {
 
   const createRoom = async () => {
     setCreatingRoom(true);
+    const { data: userRes } = await supabase.auth.getUser();
+    if (!userRes.user) {
+      setCreatingRoom(false);
+      navigate({ to: "/auth" });
+      return;
+    }
     const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     const code =
       Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("") +
       "-" +
       Array.from({ length: 2 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
-    const { error } = await supabase.from("rooms").insert({ code });
+    const { error } = await supabase.from("rooms").insert({ code, owner_id: userRes.user.id });
     setCreatingRoom(false);
     if (error) {
       console.error(error);
@@ -167,6 +173,7 @@ function Hub() {
     }
     navigate({ to: "/r/$code", params: { code } });
   };
+
 
   const [chatHealth, setChatHealth] = useState<Record<string, Health>>({});
   const [tileHealth, setTileHealth] = useState<Record<string, Health>>({});
