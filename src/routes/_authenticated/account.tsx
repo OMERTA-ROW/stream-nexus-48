@@ -1,72 +1,93 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import {
-  beginStreamlabsAuth,
-  getStreamlabsStatus,
-  disconnectStreamlabs,
-} from "@/lib/streamlabs.functions";
+import { Trash2, Plus } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/account")({
   head: () => ({
     meta: [
       { title: "Account — OmniCast" },
-      { name: "description", content: "Manage your OmniCast account and linked streaming platforms." },
+      { name: "description", content: "Manage your OmniCast account and your saved streaming channels." },
     ],
   }),
   component: AccountPage,
 });
 
-type Status = Awaited<ReturnType<typeof getStreamlabsStatus>>;
+const PLATFORMS = [
+  "twitch",
+  "youtube",
+  "kick",
+  "tiktok",
+  "facebook",
+  "snapchat",
+  "streamlabs",
+] as const;
+type Platform = (typeof PLATFORMS)[number];
+
+interface Row {
+  id: string;
+  platform: Platform;
+  handle: string;
+}
 
 function AccountPage() {
   const navigate = useNavigate();
-  const begin = useServerFn(beginStreamlabsAuth);
-  const status = useServerFn(getStreamlabsStatus);
-  const disconnect = useServerFn(disconnectStreamlabs);
-
   const [email, setEmail] = useState<string | null>(null);
-  const [sl, setSl] = useState<Status | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [platform, setPlatform] = useState<Platform>("twitch");
+  const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
-    try {
-      const s = await status();
-      setSl(s);
-    } catch (err) {
-      console.error(err);
+    const { data, error } = await supabase
+      .from("user_channels")
+      .select("id, platform, handle")
+      .order("created_at", { ascending: true });
+    if (error) {
+      toast.error(error.message);
+      return;
     }
+    setRows((data ?? []) as Row[]);
   };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void refresh();
   }, []);
 
-  const connect = async () => {
+  const add = async () => {
+    const h = handle.trim();
+    if (!h) return;
     setBusy(true);
-    try {
-      const { url } = await begin({ data: { origin: window.location.origin } });
-      window.location.href = url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not start Streamlabs auth");
+    const { data: u } = await supabase.auth.getUser();
+    if (!u.user) {
       setBusy(false);
+      return;
     }
+    const { error } = await supabase.from("user_channels").insert({
+      user_id: u.user.id,
+      platform,
+      handle: h,
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message.includes("duplicate") ? "That channel is already saved." : error.message);
+      return;
+    }
+    setHandle("");
+    toast.success("Channel saved");
+    await refresh();
   };
 
-  const unlink = async () => {
-    setBusy(true);
-    try {
-      await disconnect();
-      await refresh();
-      toast.success("Streamlabs disconnected");
-    } finally {
-      setBusy(false);
+  const remove = async (id: string) => {
+    const { error } = await supabase.from("user_channels").delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
     }
+    await refresh();
   };
 
   const signOut = async () => {
@@ -74,24 +95,12 @@ function AccountPage() {
     navigate({ to: "/" });
   };
 
-  const linked = sl?.connected ? sl.linkedPlatforms ?? [] : [];
-
-  const goToHubWithLinks = () => {
-    if (!linked.length) {
-      navigate({ to: "/hub" });
-      return;
-    }
-    const params = new URLSearchParams();
-    for (const c of linked) params.append("add", `${c.platform}:${c.handle}`);
-    navigate({ to: "/hub", search: Object.fromEntries(params) as never });
-  };
-
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
         <div className="mx-auto max-w-3xl px-4 py-4 flex items-center justify-between">
           <Link to="/" className="font-semibold">OmniCast</Link>
-          <div className="flex gap-2 text-sm">
+          <div className="flex gap-3 text-sm">
             <Link to="/hub" className="text-muted-foreground hover:text-foreground">Hub</Link>
             <button onClick={signOut} className="text-muted-foreground hover:text-foreground">Sign out</button>
           </div>
@@ -105,53 +114,59 @@ function AccountPage() {
         </section>
 
         <section className="rounded-lg border border-border p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="font-semibold">Streamlabs</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Link Streamlabs to auto-load your Twitch/YouTube/Facebook channels into the hub and stream your merged chat into one feed.
-              </p>
-            </div>
-            <span
-              className="text-xs px-2 py-1 rounded-full border"
-              style={{
-                borderColor: sl?.connected ? "var(--color-streamlabs)" : "hsl(var(--border))",
-                color: sl?.connected ? "var(--color-streamlabs)" : "hsl(var(--muted-foreground))",
-              }}
+          <h2 className="font-semibold">Your channels</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Save the platform handles you want to watch. They'll auto-load in the hub on every device you sign into.
+          </p>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <select
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value as Platform)}
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
             >
-              {sl?.connected ? "Connected" : "Not connected"}
-            </span>
+              {PLATFORMS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <input
+              value={handle}
+              onChange={(e) => setHandle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder="channel handle (e.g. shroud)"
+              className="flex-1 min-w-[200px] rounded-md border border-border bg-background px-3 py-2 text-sm"
+            />
+            <Button onClick={add} disabled={busy || !handle.trim()}>
+              <Plus className="h-4 w-4 mr-1" /> Add
+            </Button>
           </div>
 
-          {sl?.connected ? (
-            <div className="mt-4 space-y-3">
-              <div className="text-sm">
-                <span className="text-muted-foreground">Account:</span>{" "}
-                <span className="font-medium">{sl.displayName ?? "Streamlabs user"}</span>
-              </div>
-              <div className="text-sm">
-                <span className="text-muted-foreground">Detected platforms:</span>{" "}
-                {linked.length ? (
-                  <span className="font-medium">
-                    {linked.map((l) => `${l.platform}:${l.handle}`).join(", ")}
-                  </span>
-                ) : (
-                  <span className="italic text-muted-foreground">none — link Twitch/YouTube/Facebook in Streamlabs first</span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button onClick={goToHubWithLinks}>Open hub with these channels</Button>
-                <Button variant="outline" onClick={connect} disabled={busy}>Refresh link</Button>
-                <Button variant="ghost" onClick={unlink} disabled={busy}>Disconnect</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-4">
-              <Button onClick={connect} disabled={busy}>
-                {busy ? "Opening Streamlabs…" : "Connect Streamlabs"}
-              </Button>
-            </div>
-          )}
+          <ul className="mt-5 divide-y divide-border rounded-md border border-border">
+            {rows.length === 0 && (
+              <li className="px-4 py-6 text-sm text-muted-foreground text-center">No channels saved yet.</li>
+            )}
+            {rows.map((r) => (
+              <li key={r.id} className="flex items-center justify-between px-4 py-3">
+                <div className="text-sm">
+                  <span className="uppercase text-xs text-muted-foreground mr-2">{r.platform}</span>
+                  <span className="font-medium">{r.handle}</span>
+                </div>
+                <button
+                  onClick={() => remove(r.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label={`Remove ${r.handle}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-4">
+            <Button variant="outline" onClick={() => navigate({ to: "/hub" })}>
+              Open hub
+            </Button>
+          </div>
         </section>
       </main>
     </div>
