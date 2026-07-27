@@ -496,7 +496,17 @@ function Hub() {
                     style={{ backgroundColor: m.color }}
                   />
                   {m.short} · {c.label ?? c.handle}
-                  <StatusDot level={h.level} />
+                  <span
+                    className="ml-1 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    style={{
+                      color: HEALTH_COLORS[h.level],
+                      borderColor: `${HEALTH_COLORS[h.level]}55`,
+                      backgroundColor: `${HEALTH_COLORS[h.level]}14`,
+                    }}
+                  >
+                    <StatusDot level={h.level} />
+                    {h.label}
+                  </span>
                   {(h.level === "degraded" || h.level === "failed") && (
                     <button
                       onClick={() => reconnectChannel(c.id)}
