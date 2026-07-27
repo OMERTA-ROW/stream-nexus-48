@@ -39,11 +39,13 @@ function AuthPage() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: `${window.location.origin}/verify` },
         });
         if (error) throw error;
         toast.success("Check your email to confirm the account.");
+        navigate({ to: "/verify" });
       } else {
+
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         navigate({ to: "/account" });
