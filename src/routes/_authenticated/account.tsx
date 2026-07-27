@@ -163,6 +163,29 @@ function AccountPage() {
         <section>
           <h1 className="text-2xl font-semibold">Account</h1>
           <p className="text-sm text-muted-foreground mt-1">{email}</p>
+          <p className="text-xs mt-2">
+            Plan: <span className="uppercase font-semibold text-primary">{plan}</span>
+            {lifetime && <span className="ml-2 rounded bg-primary/10 px-2 py-0.5 text-primary">Lifetime</span>}
+          </p>
+        </section>
+
+        <section className="rounded-lg border border-border p-5">
+          <h2 className="font-semibold">Redeem a coupon</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Have a code? Enter it to unlock a plan.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <input
+              value={coupon}
+              onChange={(e) => setCoupon(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && redeem()}
+              placeholder="Enter coupon code"
+              className="flex-1 min-w-[220px] rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+            />
+            <Button onClick={redeem} disabled={redeeming || !coupon.trim()}>
+              {redeeming ? "Redeeming…" : "Redeem"}
+            </Button>
+          </div>
         </section>
 
         <section className="rounded-lg border border-border p-5">
