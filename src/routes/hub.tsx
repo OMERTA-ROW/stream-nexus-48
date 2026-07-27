@@ -389,6 +389,13 @@ function Hub() {
               {degradedCount > 0 ? `${degradedCount} degraded` : "All healthy"}
             </button>
           )}
+          <Link
+            to="/account"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent"
+            title="Link Streamlabs & manage your account"
+          >
+            Account
+          </Link>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Radio className="h-3.5 w-3.5" />
             {channels.length} channel{channels.length === 1 ? "" : "s"}
