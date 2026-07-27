@@ -641,15 +641,15 @@ function StreamTile({
             className="absolute inset-0 h-full w-full"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/50 p-4 text-center text-sm text-muted-foreground">
-            {meta.label} Live has no embeddable player.{" "}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/50 p-4 text-center text-sm text-muted-foreground">
+            <span>{meta.label} Live has no embeddable player.</span>
             <a
-              className="ml-1 text-primary underline"
-              href={`https://www.tiktok.com/@${channel.handle}/live`}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+              href={meta.goLive(channel.handle)}
               target="_blank"
               rel="noreferrer"
             >
-              Open on {meta.label} →
+              Go Live on {meta.label} →
             </a>
           </div>
         )}
