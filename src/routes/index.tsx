@@ -12,6 +12,7 @@ const platforms = [
   { name: "TikTok Live", color: "var(--color-tiktok)" },
   { name: "Facebook Live", color: "var(--color-facebook)" },
   { name: "Snapchat", color: "var(--color-snapchat)" },
+  { name: "Streamlabs", color: "var(--color-streamlabs)" },
 ];
 
 function Landing() {
