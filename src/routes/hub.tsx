@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Radio, X, Plus, MessagesSquare, Filter, Camera, Video, Users, RotateCw, Activity } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { connectTwitch, type ChatMessage, type ConnectionState, type Platform } from "@/lib/chat-sources";
+import { toast } from "sonner";
 
 
 type HealthLevel = "live" | "connecting" | "degraded" | "failed" | "idle";
@@ -53,6 +54,7 @@ interface Channel {
   id: string;
   platform: SourceKind;
   handle: string;
+  accountChannelId?: string;
   // camera-only: deviceId label for display
   label?: string;
 }
@@ -231,11 +233,16 @@ function Hub() {
       const p = row.platform as Platform;
       if (!PLATFORMS.includes(p)) return;
       setChannels((prev) => {
-        const exists = prev.some(
+        const existing = prev.find(
           (c) => c.platform === p && c.handle.toLowerCase() === row.handle.toLowerCase(),
         );
-        if (exists) return prev;
-        return [...prev, { id: `acct-${row.id}`, platform: p, handle: row.handle }];
+        if (existing) {
+          if (existing.accountChannelId === row.id) return prev;
+          return prev.map((channel) =>
+            channel.id === existing.id ? { ...channel, accountChannelId: row.id } : channel,
+          );
+        }
+        return [...prev, { id: `acct-${row.id}`, platform: p, handle: row.handle, accountChannelId: row.id }];
       });
     };
 
@@ -265,7 +272,9 @@ function Hub() {
           { event: "DELETE", schema: "public", table: "user_channels", filter: `user_id=eq.${userId}` },
           (payload) => {
             const row = payload.old as { id: string };
-            setChannels((prev) => prev.filter((c) => c.id !== `acct-${row.id}`));
+            setChannels((prev) =>
+              prev.filter((c) => c.accountChannelId !== row.id && c.id !== `acct-${row.id}`),
+            );
           },
         )
         .subscribe();
@@ -364,7 +373,17 @@ function Hub() {
     setCameraOpen(false);
   };
 
-  const removeChannel = (id: string) => {
+  const removeChannel = async (channel: Channel) => {
+    const accountChannelId = channel.accountChannelId ??
+      (channel.id.startsWith("acct-") ? channel.id.slice(5) : undefined);
+    if (accountChannelId) {
+      const { error } = await supabase.from("user_channels").delete().eq("id", accountChannelId);
+      if (error) {
+        toast.error("Could not remove this saved channel. Please try again.");
+        return;
+      }
+    }
+    const id = channel.id;
     setChannels((prev) => prev.filter((c) => c.id !== id));
     setChatHealth((prev) => { const n = { ...prev }; delete n[id]; return n; });
     setTileHealth((prev) => { const n = { ...prev }; delete n[id]; return n; });
@@ -525,7 +544,7 @@ function Hub() {
                     </button>
                   )}
                   <button
-                    onClick={() => removeChannel(c.id)}
+                    onClick={() => void removeChannel(c)}
                     className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                     aria-label="Remove"
                   >
