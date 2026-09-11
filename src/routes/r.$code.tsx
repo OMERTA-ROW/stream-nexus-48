@@ -121,6 +121,7 @@ function RoomPage() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [canManage, setCanManage] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
@@ -165,7 +166,7 @@ function RoomPage() {
       try {
         const { data: roomRow, error: roomErr } = await supabase
           .from("rooms")
-          .select("code")
+          .select("code, owner_id")
           .eq("code", code)
           .maybeSingle();
         if (cancelled) return;
@@ -174,6 +175,9 @@ function RoomPage() {
           setError("Room not found. Ask the room owner for a fresh link.");
           return;
         }
+        const { data: userData } = await supabase.auth.getUser();
+        if (cancelled) return;
+        setCanManage(userData.user?.id === roomRow.owner_id);
         const { data, error } = await supabase
           .from("room_channels")
           .select("*")
@@ -257,15 +261,20 @@ function RoomPage() {
   );
 
   const addChannel = async () => {
+    if (!canManage) return;
     const h = handle.trim().replace(/^@/, "");
     if (!h) return;
-    setHandle("");
     const { error } = await supabase.from("room_channels").insert({
       room_code: code,
       platform,
       handle: h,
     });
-    if (error) setError(error.message);
+    if (error) {
+      setError("Could not add that channel. Please try again.");
+      return;
+    }
+    setError(null);
+    setHandle("");
   };
 
   const addCamera = (deviceId: string, label: string) => {
@@ -278,8 +287,9 @@ function RoomPage() {
 
   const removeChannel = async (c: LocalChannel) => {
     if (c.remote) {
+      if (!canManage) return;
       const { error } = await supabase.from("room_channels").delete().eq("id", c.id);
-      if (error) setError(error.message);
+      if (error) setError("Could not remove that channel. Please try again.");
     } else {
       setCameraChannels((prev) => prev.filter((x) => x.id !== c.id));
     }
@@ -313,7 +323,7 @@ function RoomPage() {
         </Link>
         <div className="flex items-center gap-2">
           <span className="rounded-full border border-border bg-card/60 px-2.5 py-1 font-mono text-xs uppercase tracking-widest">
-            Room · {code}
+            Room · {code} · {canManage ? "Owner" : "Viewer"}
           </span>
           <button
             onClick={copyLink}
@@ -345,6 +355,7 @@ function RoomPage() {
 
       {showVideo && (
         <div className="border-b border-border/60 bg-card/40 px-4 py-3">
+          {canManage ? (
           <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
             <div className="flex overflow-hidden rounded-md border border-border">
               {PLATFORMS.map((p) => (
@@ -379,6 +390,11 @@ function RoomPage() {
               <Camera className="h-4 w-4" /> Camera
             </button>
           </div>
+          ) : (
+            <p className="mx-auto max-w-6xl text-xs text-muted-foreground">
+              Viewer mode · Channel changes are managed by the room owner.
+            </p>
+          )}
 
           {channels.length > 0 && (
             <div className="mx-auto mt-2 flex max-w-6xl flex-wrap items-center gap-1.5">
@@ -410,13 +426,15 @@ function RoomPage() {
                       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: m.color }} />
                       {m.short} · {c.label ?? c.handle}
                     </button>
-                    <button
-                      onClick={() => removeChannel(c)}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      aria-label="Remove"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                    {(!c.remote || canManage) && (
+                      <button
+                        onClick={() => void removeChannel(c)}
+                        className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        aria-label="Remove"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </span>
                 );
               })}
@@ -546,7 +564,7 @@ function EmptyState({ onCamera, onSolo }: { onCamera: () => void; onSolo: () => 
         </div>
         <h3 className="font-display text-lg font-semibold">Empty room</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Add a channel — every joined device will pick it up in real time. Share the room link to pair a phone, tablet or TV.
+          {"The room owner can add a channel, and every joined device will pick it up in real time. Share the link to pair a phone, tablet or TV."}
         </p>
         <div className="mt-4 flex justify-center gap-2">
           <button
