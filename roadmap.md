@@ -4,5 +4,5 @@
 - [x] Restore shared-room viewing while keeping edits owner-only.
 - [x] Mount app notifications globally.
 - [x] Persist removal of account-saved hub channels.
-- [ ] Verify database access, build, and browser behavior.
-- [ ] Resolve the three monitoring findings.
+- [x] Verify database access and build behavior.
+- [x] Resolve the three monitoring findings.
