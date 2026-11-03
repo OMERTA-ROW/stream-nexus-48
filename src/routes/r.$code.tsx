@@ -162,6 +162,7 @@ function RoomPage() {
   // signed-in owners; here we only read/join.
   useEffect(() => {
     let cancelled = false;
+    let authSub: { unsubscribe: () => void } | null = null;
     (async () => {
       try {
         const { data: roomRow, error: roomErr } = await supabase
@@ -201,7 +202,7 @@ function RoomPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; authSub?.unsubscribe(); };
   }, [code]);
 
 
