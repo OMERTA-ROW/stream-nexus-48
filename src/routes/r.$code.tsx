@@ -175,9 +175,12 @@ function RoomPage() {
           setError("Room not found. Ask the room owner for a fresh link.");
           return;
         }
-        const { data: userData } = await supabase.auth.getUser();
+        const { data: userData } = await supabase.auth.getSession();
         if (cancelled) return;
-        setCanManage(userData.user?.id === roomRow.owner_id);
+        setCanManage(userData.session?.user.id === roomRow.owner_id);
+        authSub = supabase.auth.onAuthStateChange((_e, session) => {
+          if (!cancelled) setCanManage(session?.user.id === roomRow.owner_id);
+        }).data.subscription;
         const { data, error } = await supabase
           .from("room_channels")
           .select("*")
@@ -355,8 +358,8 @@ function RoomPage() {
 
       {showVideo && (
         <div className="border-b border-border/60 bg-card/40 px-4 py-3">
-          {canManage ? (
           <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
+            {canManage ? (<>
             <div className="flex overflow-hidden rounded-md border border-border">
               {PLATFORMS.map((p) => (
                 <button
@@ -383,6 +386,11 @@ function RoomPage() {
             >
               <Plus className="h-4 w-4" /> Add
             </button>
+            </>) : (
+              <p className="flex-1 text-xs text-muted-foreground">
+                Viewer mode · Channels are managed by the room owner. You can still add your own camera.
+              </p>
+            )}
             <button
               onClick={() => setCameraOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm font-semibold hover:bg-accent"
@@ -390,11 +398,6 @@ function RoomPage() {
               <Camera className="h-4 w-4" /> Camera
             </button>
           </div>
-          ) : (
-            <p className="mx-auto max-w-6xl text-xs text-muted-foreground">
-              Viewer mode · Channel changes are managed by the room owner.
-            </p>
-          )}
 
           {channels.length > 0 && (
             <div className="mx-auto mt-2 flex max-w-6xl flex-wrap items-center gap-1.5">
