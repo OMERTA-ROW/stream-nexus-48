@@ -291,9 +291,14 @@ function Hub() {
         void load(session.user.id);
         subscribe(session.user.id);
       }
-      if (event === "SIGNED_OUT" && realtimeChannel) {
-        supabase.removeChannel(realtimeChannel);
-        realtimeChannel = null;
+      if (event === "SIGNED_OUT") {
+        if (realtimeChannel) {
+          supabase.removeChannel(realtimeChannel);
+          realtimeChannel = null;
+        }
+        setChannels((prev) =>
+          prev.map((c) => (c.accountChannelId ? { ...c, accountChannelId: undefined } : c)),
+        );
       }
     });
     return () => {
@@ -377,10 +382,10 @@ function Hub() {
     const accountChannelId = channel.accountChannelId ??
       (channel.id.startsWith("acct-") ? channel.id.slice(5) : undefined);
     if (accountChannelId) {
-      const { error } = await supabase.from("user_channels").delete().eq("id", accountChannelId);
-      if (error) {
-        toast.error("Could not remove this saved channel. Please try again.");
-        return;
+      const { data: sess } = await supabase.auth.getSession();
+      if (sess.session) {
+        const { error } = await supabase.from("user_channels").delete().eq("id", accountChannelId);
+        if (error) toast.error("Removed from the board, but it's still saved on your account.");
       }
     }
     const id = channel.id;
